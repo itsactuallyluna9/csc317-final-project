@@ -1,0 +1,34 @@
+name: Lint
+
+on: [push]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.17"
+      - name: "Set up Python"
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - name: Install dependencies
+        run: uv sync --locked --all-extras --dev
+      - name: Lint
+        id: lint
+        run: uv run ruff check
+        continue-on-error: true
+      - name: Typecheck
+        id: typecheck
+        run: uv run mypy --strict src
+        continue-on-error: true
+      - name: Check Formatting
+        id: format
+        run: uv run ruff format --check
+        continue-on-error: true
+      - name: Check for failures
+        if: steps.lint.outcome == 'failure' || steps.typecheck.outcome == 'failure' || steps.format.outcome == 'failure'
+        run: exit 1
