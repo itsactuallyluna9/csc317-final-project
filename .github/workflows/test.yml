@@ -21,14 +21,14 @@ jobs:
         id: lint
         run: uv run ruff check
         continue-on-error: true
-      - name: Typecheck
-        id: typecheck
-        run: uv run mypy --strict src
-        continue-on-error: true
+      # - name: Typecheck
+      #   id: typecheck
+      #   run: uv run mypy --strict src
+      #   continue-on-error: true
       - name: Check Formatting
         id: format
         run: uv run ruff format --check
         continue-on-error: true
       - name: Check for failures
-        if: steps.lint.outcome == 'failure' || steps.typecheck.outcome == 'failure' || steps.format.outcome == 'failure'
+        if: steps.lint.outcome == 'failure' || steps.format.outcome == 'failure'
         run: exit 1

@@ -1,0 +1,24 @@
+[project]
+name = "csc317-final-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Luna", email = "itsactuallyluna9@gmail.com" }
+]
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+final_client = "csc317_final_project.client.__main__:main"
+final_server = "csc317_final_project.server.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.14.1",
+    "ruff>=0.11.7",
+]
