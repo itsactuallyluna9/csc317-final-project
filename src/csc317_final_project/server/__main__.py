@@ -1,127 +1,141 @@
 import socket
 import threading
 import json
-import os
 from pathlib import Path
-from typing import Tuple
+from typing import Optional
 
-HOST = "0.0.0.0"
-PORT = 2121
+from csc317_final_project.server.db import Database
+
 SEGMENT_SIZE = 1024
 
-class ClientState:  # we may not need this anymore i dont think - trey, we aren't really moving through folders anymore
-    """
-    Holds state for each client, created so multiple clients can have their own current working directory
-    """
 
-    def __init__(self, conn: socket.socket, addr: Tuple[str, int]):
-        self.conn = conn
-        self.addr = addr
-        #self.cwd = os.getcwd() 
-        self.__server_root = Path.cwd()
+class Server:
+    def __init__(
+        self, server_path: Path, host: str = "0.0.0.0", port: int = 2121
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.db = Database(server_path)
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind((self.host, self.port))
 
-    def safety_check(self, path: Path) -> bool:
+    def start(self) -> None:
         """
-        Check if the path is valid.
+        Start the server and listen for incoming connections.
 
-        For a path to be valid, it must be under the server's root directory.
+        This method will run indefinitely, accepting new connections and spawning a new thread for each client.
         """
-
-        # this needs to work on python 3.8, we can't use is_relative_to() because it was added in 3.9 :<
+        self.server.listen()
+        print(f"[Server is listening on HOST = {self.host}, PORT = {self.port}]")
         try:
-            # convert to absolute path, resolve symlinks
-            abs_path = Path(path).resolve()
-            # is the server root in the path?
-            return (
-                self.__server_root in abs_path.parents or abs_path == self.__server_root
-            )
-        except (ValueError, OSError):
-            # handle any path-related errors
-            return False
-
-def main():
-    """
-    Start the FTP server and handle incoming connections.
-    """
-
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-            server.bind((HOST, PORT))
-            server.listen()
-            print(f"[Server is listening on HOST = {HOST}, PORT = {PORT}]")
             while True:
-                conn, addr = server.accept()
-                client = ClientState(conn, addr)
-                thread = threading.Thread(
-                    target=handle_client, args=(client,), daemon=True
-                )
+                conn, addr = self.server.accept()
+                print(f"[New Connection] {addr}")
+                thread = threading.Thread(target=self.handle_client, args=(conn,))
                 thread.start()
-    finally:
-        print("[Server shutting down]")
-        server.close()
+        except KeyboardInterrupt:
+            print("[Server shutting down]")
+        finally:
+            self.server.close()
+            print("[Server closed]")
 
+    def handle_client(self, client: socket.socket) -> None:
+        """
+        Handle a client connection.
+        """
 
-def handle_client(client: ClientState) -> None:
-    """
-    Handle a client connection.
-    """
-
-    print("[New Connection]")
-    while True:
-        packet = client.conn.recv(SEGMENT_SIZE).decode("utf-8")
-        if not packet:
-            break
-        packet = json.loads(packet)
-
-        """ may still need
-        if packet.get("target") is not None:
-            # we have a target to check!
-            target_path = Path(packet["target"])
-            if not client.safety_check(target_path):  # check if the path is valid
-                client.conn.send(
-                    f"Invalid path (via safety check): {target_path}".encode("utf-8")
+        print("[New Connection]")
+        while True:
+            packet = client.recv(SEGMENT_SIZE).decode("utf-8")
+            if not packet:
+                break
+            recieved_obj = json.loads(packet)
+            print(f"[Recieved] {recieved_obj}")
+            try:
+                to_client = self.handle_command(client, recieved_obj)
+                if to_client:
+                    send_obj(client, to_client)
+            except Exception as e:
+                send_obj(
+                    client,
+                    {
+                        "type": "ERROR",
+                        "message": str(e),
+                    },
                 )
-                continue
-            """
+
+        client.close()
+
+    def handle_command(
+        self, client: socket.socket, recieved_obj: dict
+    ) -> Optional[dict]:
         # handling to upload, modify videos
-        if packet["type"] == "UPLOAD":
-            file_name = packet["target"]
-            upload(client.conn, file_name, packet["file_size"])
-            client.conn.send(b"Upload Finished")
+        if recieved_obj["type"] == "UPLOAD":
+            file_name = recieved_obj["target"]
+            upload(client, file_name, recieved_obj["file_size"])
 
-        elif packet["type"] == "DOWNLOAD":
+        elif recieved_obj["type"] == "DOWNLOAD":
             # send a file from the server to the client
-            file_name = Path(client.cwd) / packet["target"]
-            download(client.conn, file_name)
-
-        #elif packet["type"] == "LIST":
-        #    client.conn.send(listdir(client.cwd).encode("utf-8"))
-
-        elif packet["type"] == "DELETE":
-            file_name = packet["target"]
-            delete(client, file_name)
-            # client.conn.send(b"File Deleted") # commented for now, see if we cant solve that weird issue ~luna
+            file_name = Path.cwd / recieved_obj["target"]
+            download(client, file_name)
 
         # data handling for clients gui and actions below
-        elif packet["type"] == "LOGIN":
-            pass
+        elif recieved_obj["type"] == "LOGIN":
+            success = self.db.login(
+                recieved_obj["username"],
+                recieved_obj["password"],
+            )
+            if success:
+                # they want the first page of users on successful login
+                # so...
+                self.handle_command(
+                    client,
+                    {
+                        "type": "USERS",
+                        "page_num": 0,
+                    },
+                )
+            else:
+                raise Exception("Login failed")
 
-        elif packet["type"] == "REGISTER":
-            pass
+        elif recieved_obj["type"] == "REGISTER":
+            success = self.db.register(
+                recieved_obj["username"],
+                recieved_obj["password"],
+            )
+            if success:
+                # they want the first page of users on successful login/register
+                # so...
+                self.handle_command(
+                    client,
+                    {
+                        "type": "USERS",
+                        "page_num": 0,
+                    },
+                )
+            else:
+                raise Exception("Registration failed")
 
-        elif packet["type"] == "USERS":
-            pass
+        elif recieved_obj["type"] == "USERS":
+            # get the users from the database
+            page_num = recieved_obj["page_num"]
+            users = self.db.get_users_page(page_num)
+            send_obj(client, users)
 
-        elif packet["type"] == "VIDEO_PAGE":
-            pass
+        elif recieved_obj["type"] == "VIDEO_PAGE":
+            raise NotImplementedError("what")
 
-        elif packet["type"] == "VIDEOS":
-            pass
+        elif recieved_obj["type"] == "VIDEOS":
+            # get the videos from the database
+            page_num = recieved_obj["page_num"]
+            author = recieved_obj.get("author", None)
+            videos = self.db.get_video_page(page_num, author)
+            send_obj(client, videos)
 
         else:
-            client.conn.send(b"[Command Not Found]")
-
-    client.conn.close()
+            raise NotImplementedError(
+                f"Command {recieved_obj['type']} not implemented yet!! :<"
+            )
 
 
 def upload(conn: socket.socket, file_name: str, file_size: int) -> None:
@@ -188,29 +202,6 @@ def download(conn: socket.socket, file_name: str) -> None:
     )  # this is the ip of the client, not the server
 
 
-def delete(client: ClientState, file_name: str) -> None:
-    """
-    Handle file deletion request from client.
-    """
-
-    target_path = os.path.abspath(
-        os.path.join(client.cwd, file_name)
-    )  # this is whats gonna be deleted, if you were in /Users/trey and file_name is 'bob.txt' it would delete /Users/trey/bob.txt
-
-    try:
-        os.remove(target_path)
-        print(f"File {target_path} removed from server by Client @ {client.addr[0]}")
-        client.conn.send(f"Deleting file at {target_path}".encode("utf-8"))
-    except FileNotFoundError:
-        client.conn.send("File not found! Check path".encode("utf-8"))
-    except OSError:  # if the path is a directory we have to use rmdir()
-        os.rmdir(target_path)
-        print(
-            f"Directory {target_path} removed from server by Client @ {client.addr[0]}"
-        )
-        client.conn.send(f"Deleting directory at {target_path}".encode("utf-8"))
-
-
 def send_obj(conn: socket.socket, obj: dict) -> None:
     """
     Sends a JSON object to the client.
@@ -221,4 +212,5 @@ def send_obj(conn: socket.socket, obj: dict) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    s = Server(Path("server_data"))
+    s.start()
