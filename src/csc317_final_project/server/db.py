@@ -2,6 +2,7 @@ import sqlite3
 from pathlib import Path
 from threading import RLock
 from typing import Optional
+import bcrypt
 
 
 def row_to_dict(row: sqlite3.Row) -> dict:
@@ -122,7 +123,7 @@ class Database:
                 "SELECT * FROM users WHERE username = ?", (username,)
             ).fetchone()
 
-        if user is not None and user["password"] == password:  # TODO: hash this
+        if user is not None and bcrypt.checkpw(password.encode('utf-8'), user["password"].encode('utf-8')):  # TODO: hash | checking hash using bcrypt
             return
         raise Exception("Invalid username or password")
 
@@ -141,9 +142,13 @@ class Database:
 
             if user is not None:
                 raise Exception("Username already exists")
+            
+            salt = bcrypt.gensalt()
+            hashpw = bcrypt.hashpw(password.encode('utf-8'), salt)
+
             self.cursor.execute(
                 "INSERT INTO users (username, password) VALUES (?, ?)",
-                (username, password),  # TODO: hash!
+                (username, hashpw.decode('utf-8')),  # TODO: hash! | added hashing here, decodes at end to save in db as string
             )
             self.connection.commit()
 
