@@ -5,7 +5,8 @@ import threading
 import os
 from typing import Optional, Dict, Union
 from pathlib import Path
-from wonderful_gui import GUI, run_gui
+from wonderful_gui import GUI
+from PySide6 import QtWidgets
 
 #def interpret_command(command_str: str) -> Optional[Dict[str, Union[str, int]]]:
 #    """
@@ -136,27 +137,34 @@ def run_client(gui: GUI) -> None:
 
         while True: # login loop
             if gui.login_flag.is_set():
-                login_data = get_user_credentials()
+                login_data = get_user_credentials(gui)
                 if login_data: #continues if valid attempt
                     login_data["type"] = "LOGIN"
                     server_response = request_server(client_socket, login_data)
-                gui.login_flag = False
+                    if server_response["type"] == "ERROR": #error message form server not dictionary; need to fix
+                        #display error on gui
+                            pass
+                    else:
+                        gui.server_response = server_response
+                        #move login loop to its own function to allow for logout?
+                        break
+                    gui.login_flag = False
 
             if gui.registration_flag.is_set():
-                regis_data = get_user_credentials()
+                regis_data = get_user_credentials(gui)
                 if regis_data: #continues if valid attempt
                     regis_data["type"] = "REGISTER"
                     server_response = request_server(client_socket, regis_data)
-                gui.registration_flag = False
-
-            if server_response["type"] == "ERROR": #error message form server not dictionary; need to fix
-                #display error on gui
-                pass
+                    
+                    if server_response["type"] == "ERROR": #error message form server not dictionary; need to fix
+                    #display error on gui
+                        pass
+                    else:
+                        gui.server_response = server_response
+                        #move login loop to its own function to allow for logout?
+                        break
+                    gui.registration_flag = False
             
-            else:
-                gui.server_response = server_response
-                #move login loop to its own function to allow for logout?
-                break
         in_videos_page = False
         author = ""
         previous_pages = []
@@ -291,7 +299,13 @@ def request_server(client_socket: socket.socket, request_dict: Dict) -> Dict:
     
 
 if __name__ == "__main__":
-    gui = GUI()
-    gui.run_gui()
-    network_thread = threading.Thread(target = run_client)
-    network_thread.start()    
+    app = QtWidgets.QApplication([])
+
+    button = GUI()
+    network_thread = threading.Thread(target = run_client, args=(button, ))
+    network_thread.start()
+    button.resize(800, 600)
+    button.show()
+
+    exit(app.exec())
+       
