@@ -6,11 +6,13 @@ Abandon all hope, all ye who enter here. ~Luna
 
 import json
 import subprocess
-from pathlib import Path
-from typing import Dict, Optional
-from logging import getLogger
 from concurrent.futures import ThreadPoolExecutor
+from logging import getLogger
+from pathlib import Path
 from platform import processor, system
+from typing import Dict, Optional
+
+from csc317_final_project.server.quality import VideoQuality
 
 logger = getLogger(__name__)
 
@@ -103,9 +105,8 @@ def get_video_info(video_path: Path) -> Dict:
 
 def convert_video(
     input_file: Path,
-    output_file: Path,
+    output_path: Path,
     target_height: int,
-    name: str,
     crf: int,
     preset: str,
     video_bitrate: str,
@@ -117,9 +118,8 @@ def convert_video(
 
     Args:
         input_file (Path): The path to the input video file.
-        output_file (Path): The path to the output video file, as a stem and extension. ("output.mp4" will turn into "outputXYZ.mp4", where XYZ is the segment number)
+        output_path (Path): The path to where the output video files will be saved. (The files are named {num}.mp4.)
         target_height (int): The target height for the video.
-        name (str): The preset name (e.g., "4K", "2K", "1080p", etc.).
         crf (int): The constant rate factor for the video encoding.
         preset (str): The encoding preset for FFmpeg.
         video_bitrate (str): The video bitrate for the output file.
@@ -127,7 +127,7 @@ def convert_video(
         segment_length (float): The length of each segment in seconds. (Approximate - video may not split exactly at this length)
     """
     logger.info(
-        f"Converting video: {input_file} to {output_file} with target height {target_height}"
+        f"Converting video: {input_file} to {output_path} with target height {target_height}"
     )
 
     if system() == "Darwin" and processor() == "arm":
@@ -170,7 +170,7 @@ def convert_video(
             "segment",
             "-segment_time",
             str(segment_length),
-            f"{output_file.stem}%03d{output_file.suffix}",
+            str(output_path / "%d.mp4"),
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -180,7 +180,7 @@ def convert_video(
         raise RuntimeError(
             f"FFmpeg failed with error: {process.stderr.decode('utf-8')}"
         )
-    logger.info(f"Video {input_file} converted to {output_file}")
+    logger.info(f"Video {input_file} converted to {output_path}")
 
 
 def generate_thumbnail(
@@ -194,6 +194,10 @@ def generate_thumbnail(
         output_file (Path): The path to the output thumbnail image file.
         video_position (float, optional): The position in the video to capture the thumbnail. Defaults to 0.3 (30% into the video).
     """
+    logger.info(f"Generating thumbnail for video: {video} at {video_position * 100}%")
+    if not does_ffmpeg_exist():
+        logger.critical("FFmpeg is not installed.")
+        raise RuntimeError("FFmpeg is not installed.")
     video_position = min(max(video_position, 0), 1)  # clamp between 0 and 1
     video_info = get_video_info(video)
     if not video_info:
@@ -228,57 +232,59 @@ def generate_thumbnail(
     logger.info(f"Thumbnail generated: {output_file}")
 
 
-def process_video(video: Path, max_workers: Optional[int] = 2) -> None:
+def process_video(uploaded_video: Path, max_workers: Optional[int] = 2) -> None:
     """
     Process an uploaded video file, converting it to a more compatible format and splitting into segments.
+    Will also generate a thumbnail for the video. (See generate_thumbnail)
 
     Will block until the process is complete. This *will* take a while.
 
     Args:
-        video (Path): The path to the video file to be processed.
+        uploaded_video (Path): The path to the video file to be processed.
         max_workers (int, optional): The maximum number of threads to use for processing. Defaults to 2.
     """
-    logger.info(f"Processing video: {video}")
+    logger.info(f"Processing video: {uploaded_video}")
     if not does_ffmpeg_exist():
         logger.critical("FFmpeg is not installed.")
         raise RuntimeError("FFmpeg is not installed.")
 
-    video_info = get_video_info(video)
+    video_info = get_video_info(uploaded_video)
     if not video_info:
         logger.error("Failed to get video info.")
         raise RuntimeError("Failed to get video info.")
     source_height = video_info.get("height", 0)
 
-    resolution_configs = [
-        # height, name, crf(constant rate factor - lower is better)
-        # preset, video bitrate, audio bitrate
-        (2160, "4K", 16, "slow", "16000k", "192k"),
-        (1440, "2K", 23, "slow", "8000k", "128k"),
-        (1080, "1080p", 23, "slow", "5000k", "128k"),
-        (720, "720p", 23, "slow", "2500k", "128k"),
-        (480, "480p", 23, "slow", "1000k", "128k"),
-        (360, "360p", 23, "slow", "500k", "128k"),
-        (240, "240p", 23, "slow", "300k", "128k"),
-        (144, "144p", 23, "slow", "100k", "128k"),
+    valid_configs = [
+        quality.get_resolution_config()
+        for quality in VideoQuality
+        if quality.get_video_height() <= source_height
+        and quality.get_video_height() > 0
     ]
-
-    valid_configs = [cfg for cfg in resolution_configs if cfg[0] <= source_height]
     if not valid_configs:
-        logger.error("No valid resolution configurations found.")
-        raise RuntimeError("No valid resolution configurations found.")
+        logger.error(
+            "No valid resolution configurations found. Falling back to ONLY 144p."
+        )
+        valid_configs = [
+            VideoQuality.ONE_FORTY_FOUR_P.get_resolution_config(),
+        ]
 
     # note that, for scalability, we should really be using a separate worker process
     # and we'll submit the videos to a queue that will then be processed by the worker.
     # for now, though, this is fine.
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for height, name, crf, preset, video_bitrate, audio_bitrate in valid_configs:
-            output_file = video.parent / f"{video.stem}_{name}{video.suffix}"
+        # generate the thumbnail first
+
+        thumbnail_output_file = uploaded_video.parent / "thumbnail.jpg"
+        executor.submit(generate_thumbnail, uploaded_video, thumbnail_output_file)
+
+        for height, name, crf, preset, video_bitrate, audio_bitrate in valid_configs:  # type: ignore # we're fine
+            output_path = uploaded_video.parent / name
+            output_path.mkdir(parents=True, exist_ok=True)
             executor.submit(
                 convert_video,
-                video,
-                output_file,
+                uploaded_video,
+                output_path,
                 height,
-                name,
                 crf,
                 preset,
                 video_bitrate,
@@ -294,8 +300,4 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.DEBUG,
     )
-    generate_thumbnail(
-        Path("sys_on_fys_final.mp4"),
-        Path("sys_on_fys_final_thumbnail.jpg"),
-    )
-    # process_video(Path("sys_on_fys_final.mp4"), None)
+    process_video(Path("sys_on_fys_final.mp4"), None)

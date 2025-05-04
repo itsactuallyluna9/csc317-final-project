@@ -7,7 +7,9 @@ authors = [
     { name = "Luna", email = "itsactuallyluna9@gmail.com" }
 ]
 requires-python = ">=3.8"
-dependencies = []
+dependencies = [
+    "pyside6>=6.6.3.1",
+]
 
 [project.scripts]
 final_client = "csc317_final_project.client.__main__:main"

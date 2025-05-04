@@ -1,12 +1,33 @@
+import json
 import socket
 import threading
-import json
+from logging import getLogger
 from pathlib import Path
-from typing import Optional
+from time import sleep
+from typing import Optional, Tuple
 
 from csc317_final_project.server.db import Database
+from csc317_final_project.server.ffmpeg import process_video
+from csc317_final_project.server.fs import (
+    get_segment_path,
+    get_video_root_path,
+)
+from csc317_final_project.server.quality import VideoQuality
 
-SEGMENT_SIZE = 1024
+SEGMENT_SIZE = 4096
+
+logger = getLogger(__name__)
+
+
+class ClientState:
+    """
+    Holds state for each client, created so multiple clients can have their own current working directory
+    """
+
+    def __init__(self, conn: socket.socket, addr: Tuple[str, int]):
+        self.conn = conn
+        self.addr = addr
+        self.username = None
 
 
 class Server:
@@ -15,9 +36,18 @@ class Server:
     ) -> None:
         self.host = host
         self.port = port
+        self.path = server_path
         self.db = Database(server_path)
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server.bind((self.host, self.port))
+        while True:
+            try:
+                self.server.bind((self.host, self.port))
+                break
+            except OSError:
+                logger.warning(
+                    f"Port {self.port} is already in use. Waiting for a bit..."
+                )
+                sleep(5)
 
     def start(self) -> None:
         """
@@ -26,111 +56,135 @@ class Server:
         This method will run indefinitely, accepting new connections and spawning a new thread for each client.
         """
         self.server.listen()
-        print(f"[Server is listening on HOST = {self.host}, PORT = {self.port}]")
+        logger.info(f"Server is listening on HOST = {self.host}, PORT = {self.port}")
         try:
             while True:
                 conn, addr = self.server.accept()
-                print(f"[New Connection] {addr}")
-                thread = threading.Thread(target=self.handle_client, args=(conn,))
+                logger.debug(f"Accepted connection from {addr}")
+                client_state = ClientState(conn, addr)
+                thread = threading.Thread(
+                    target=self.handle_client, args=(client_state,), daemon=True
+                )
                 thread.start()
         except KeyboardInterrupt:
-            print("[Server shutting down]")
+            logger.info("Server shutting down...")
         finally:
             self.server.close()
-            print("[Server closed]")
+            logger.info("Server socket closed.")
 
-    def handle_client(self, client: socket.socket) -> None:
+    def handle_client(self, client: ClientState) -> None:
         """
         Handle a client connection.
         """
 
-        print("[New Connection]")
         while True:
-            packet = client.recv(SEGMENT_SIZE).decode("utf-8")
+            packet = client.conn.recv(SEGMENT_SIZE).decode("utf-8")
             if not packet:
                 break
             recieved_obj = json.loads(packet)
-            print(f"[Recieved] {recieved_obj}")
+            logger.debug(f"Received message from {client.addr}: {recieved_obj}")
             try:
                 to_client = self.handle_command(client, recieved_obj)
                 if to_client:
-                    send_obj(client, to_client)
+                    send_obj(client.conn, to_client)
             except Exception as e:
+                logger.error(f"Error handling command for client {client.addr}: {e}")
                 send_obj(
-                    client,
+                    client.conn,
                     {
                         "type": "ERROR",
                         "message": str(e),
                     },
                 )
 
-        client.close()
+        client.conn.close()
 
-    def handle_command(
-        self, client: socket.socket, recieved_obj: dict
-    ) -> Optional[dict]:
+    def handle_command(self, client: ClientState, recieved_obj: dict) -> Optional[dict]:
         # handling to upload, modify videos
-        if recieved_obj["type"] == "UPLOAD":
-            file_name = recieved_obj["target"]
-            upload(client, file_name, recieved_obj["file_size"])
-
-        elif recieved_obj["type"] == "DOWNLOAD":
-            # send a file from the server to the client
-            file_name = Path.cwd / recieved_obj["target"]
-            download(client, file_name)
-
         # data handling for clients gui and actions below
-        elif recieved_obj["type"] == "LOGIN":
-            success = self.db.login(
+        if recieved_obj["type"] == "LOGIN":
+            self.db.login(
                 recieved_obj["username"],
                 recieved_obj["password"],
             )
-            if success:
-                # they want the first page of users on successful login
-                # so...
-                self.handle_command(
-                    client,
-                    {
-                        "type": "USERS",
-                        "page_num": 0,
-                    },
-                )
-            else:
-                raise Exception("Login failed")
+            # they want the first page of users on successful login
+            # so...
+            client.username = recieved_obj["username"]
+            return self.handle_command(
+                client,
+                {
+                    "type": "USERS",
+                    "page_num": 0,
+                },
+            )
+
+        elif recieved_obj["type"] == "LOGOUT":
+            client.username = None
+            return {
+                "success": True,
+            }
 
         elif recieved_obj["type"] == "REGISTER":
-            success = self.db.register(
+            self.db.register(
                 recieved_obj["username"],
                 recieved_obj["password"],
             )
-            if success:
-                # they want the first page of users on successful login/register
-                # so...
-                self.handle_command(
-                    client,
-                    {
-                        "type": "USERS",
-                        "page_num": 0,
-                    },
-                )
-            else:
-                raise Exception("Registration failed")
+
+            # they want the first page of users on successful login/register
+            # so...
+            return self.handle_command(
+                client,
+                {
+                    "type": "USERS",
+                    "page_num": 0,
+                },
+            )
 
         elif recieved_obj["type"] == "USERS":
             # get the users from the database
             page_num = recieved_obj["page_num"]
             users = self.db.get_users_page(page_num)
-            send_obj(client, users)
+            return users
+
+        elif recieved_obj["type"] == "VIDEO":
+            # segments - download!!
+            return download(
+                client.conn,
+                get_segment_path(
+                    self.path,
+                    recieved_obj["video_id"],
+                    VideoQuality(recieved_obj["quality"]),
+                    recieved_obj["segment_id"],
+                ),
+            )
+
+        elif recieved_obj["type"] == "VIDEO_UPLOAD":
+            # upload!!!
+            if client.username is None:
+                raise Exception("Client not logged in")
+            file_ext = Path(recieved_obj["target"]).suffix
+            title = recieved_obj["title"]
+            file_size = recieved_obj["file_size"]
+            video_id = self.db.start_upload_video(title, client.username)
+            video_root = get_video_root_path(self.path, str(video_id))
+            video_root.mkdir(parents=True, exist_ok=True)
+            original_video = video_root / f"original{file_ext}"
+            upload(client.conn, original_video, file_size)
+            process_video(original_video)
+            return {"success": True}
+
+        elif recieved_obj["type"] == "VIDEO_INFO":
+            # get the video info from the database
+            video_id = recieved_obj["video_id"]
+            video_info = self.db.get_video_info(video_id)
+            return video_info
 
         elif recieved_obj["type"] == "VIDEO_PAGE":
-            raise NotImplementedError("what")
-
-        elif recieved_obj["type"] == "VIDEOS":
             # get the videos from the database
             page_num = recieved_obj["page_num"]
             author = recieved_obj.get("author", None)
             videos = self.db.get_video_page(page_num, author)
-            send_obj(client, videos)
+            return videos
 
         else:
             raise NotImplementedError(
@@ -138,35 +192,33 @@ class Server:
             )
 
 
-def upload(conn: socket.socket, file_name: str, file_size: int) -> None:
+def upload(conn: socket.socket, file_path: Path, file_size: int) -> None:
     """
     Handle file upload from client.
     """
 
-    conn.send(b"ACK")
+    send_obj(conn, {"type": "ACK"})
     completed = 0
-    with open(file_name, "wb") as f:
+    with file_path.open("wb") as f:
         while completed < file_size:
             data = conn.recv(SEGMENT_SIZE)
             f.write(data)
             completed += len(data)
-    print(
-        f"File with name {file_name} by the user {conn.getpeername()[0]} uploaded to the server."
+    logger.debug(
+        f"File with name {file_path.name} by the user {conn.getpeername()[0]} uploaded to the server."
     )
 
 
-def download(conn: socket.socket, file_name: str) -> None:
+def download(conn: socket.socket, file_path: Path) -> None:
     """
     Handle file download to client.
     """
 
     # personally, i love the pathlib api
     # so im using it because there's enough to worry about already
-    file_path = Path(file_name)
     if not file_path.is_file():  # also checks if it exists
         # we can't send!!!
-        conn.send(f"File not found at target path {file_name}".encode("utf-8"))
-        return
+        raise FileNotFoundError(f"File not found at target path {file_path}")
 
     # we can send! first lets get the file size
     file_size = file_path.stat().st_size
@@ -183,13 +235,12 @@ def download(conn: socket.socket, file_name: str) -> None:
         },
     )
 
-    ack = conn.recv(SEGMENT_SIZE)  # check for ACK from client
-    if ack != b"ACK":
-        print("Client did not acknowledge file metadata! Aborting transfer.")
-        return
+    ack = json.loads(conn.recv(SEGMENT_SIZE))  # check for ACK from client
+    if ack != {"type": "ACK"}:
+        raise RuntimeError(f"Client did not acknowledge file transfer. Received: {ack}")
 
     # now we can send the file
-    with open(file_name, "rb") as file:
+    with open(file_path, "rb") as file:
         while True:
             data = file.read(SEGMENT_SIZE)
             if not data:
@@ -197,8 +248,8 @@ def download(conn: socket.socket, file_name: str) -> None:
             conn.sendall(data)
 
     # and we're done, the client will know when we're done (because of the file_size we sent earlier)
-    print(
-        f"File {file_name} sent to client @ {conn.getpeername()[0]}"
+    logger.debug(
+        f"File {file_path} sent to client @ {conn.getpeername()[0]}"
     )  # this is the ip of the client, not the server
 
 
@@ -211,6 +262,17 @@ def send_obj(conn: socket.socket, obj: dict) -> None:
     conn.sendall(json_obj.encode("utf-8"))
 
 
-if __name__ == "__main__":
+def main():
+    import logging
+
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s (%(threadName)s) - %(levelname)s - %(message)s",
+        level=logging.DEBUG,
+    )
+
     s = Server(Path("server_data"))
     s.start()
+
+
+if __name__ == "__main__":
+    main()
