@@ -5,7 +5,7 @@ import threading
 import os
 from typing import Optional, Dict, Union
 from pathlib import Path
-from wonderful_gui import GUI
+from wonderful_gui import GUI, run_gui
 
 #def interpret_command(command_str: str) -> Optional[Dict[str, Union[str, int]]]:
 #    """
@@ -134,15 +134,95 @@ def run_client(gui: GUI) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         client_socket.connect((server_ip, server_port))
 
-        while True:
+        while True: # login loop
             if gui.login_flag.is_set():
-                login_data = get_login_data()
-                server_response = check_login(login_data)
-            if gui.registration_flag.is_set():
-                regis_data = get_registration_data()
-                server_response = check_login(regis_data)
+                login_data = get_user_credentials()
+                if login_data: #continues if valid attempt
+                    login_data["type"] = "LOGIN"
+                    server_response = request_server(client_socket, login_data)
+                gui.login_flag = False
 
-            #give data to gui
+            if gui.registration_flag.is_set():
+                regis_data = get_user_credentials()
+                if regis_data: #continues if valid attempt
+                    regis_data["type"] = "REGISTER"
+                    server_response = request_server(client_socket, regis_data)
+                gui.registration_flag = False
+
+            if server_response["type"] == "ERROR": #error message form server not dictionary; need to fix
+                #display error on gui
+                pass
+            
+            else:
+                gui.server_response = server_response
+                #move login loop to its own function to allow for logout?
+                break
+        in_videos_page = False
+        author = ""
+        previous_pages = []
+        while True: #navigation loop
+            if gui.page_flag.is_set():
+                page_request = get_page_num(gui)
+                if in_videos_page:
+                    page_request["type"] = "VIDEO_PAGE"
+                    page_request["author_name"] = author
+                else:
+                    page_request["type"] = "USERS"
+                page = request_server(client_socket, page_request)
+                #check errors
+                gui.server_response = page
+                gui.page_flag = False
+
+            if gui.user_flag.is_set():
+                in_videos_page = True
+                #author = get author from gui
+                #previous_pages.append(page_num  from gui)
+                author_request = {}
+                author_request["type"] = "VIDEO_PAGE"
+                author_request["author"] = author
+                author_request["page_num"] = 1
+                author_page = request_server(client_socket, author_request)
+                #check errors
+                gui.server_response = author_page
+                gui.user_flag = False
+            
+            if gui.home_flag.is_set():
+                previous_pages = []
+                home_request = {}
+                home_request["type"] = "USERS"
+                home_request["page_num"] = 1 # assuming page_num is in integers right now
+                home_page = request_server(client_socket, home_request) #use page instead?
+                #check errors
+                gui.server_response = home_page
+                gui.home_flag = False
+            
+            if gui.back_flag.is_set():
+                last_page_num = previous_pages.pop()
+                last_page_request = {}
+                if not previous_pages:
+                    last_page_request["type"] = "USERS"
+                else:
+                    last_page_request["type"] = "VIDEO_PAGE"
+                    last_page_request["author"] = author
+                    in_videos_page = True
+
+                last_page_request["page_num"] = last_page_num
+                last_page = request_server(client_socket, last_page_request)
+                #check errors
+                gui.server_response = last_page
+                gui.back_flag = False
+
+            if gui.video_flag.is_set():
+                in_videos_page = False
+                video_request = {}
+                video_request["type"] ="VIDEOS"
+                #video_request["video_id"] = get video_id from gui
+                #segment_num???
+                #quality???
+                #maybe get response from server and request segment_num and quality afterward
+
+                gui.video_flag = False
+
                 
 
 
@@ -177,30 +257,36 @@ def run_client(gui: GUI) -> None:
         #            receive_reply(client_socket, request_dict["type"])
 
 
-def get_login_data(gui: GUI):
+def get_user_credentials(gui: GUI) -> Dict:
     """
-    Gets username and password from gui
+    Gets and checks username and password from gui
     """
-    login_dict = {}
-    login_dict['username'] = gui.username #get username from gui
-    login_dict['password'] = gui.password #get password from gui
-    login_dict['type'] = 'login'
-    return login_dict
-
-def get_registration_data(gui: GUI):
-    """
-    Gets username and password to register a new user.
-    """
-    regis_dict = {}
-    regis_dict['username'] = gui.username
-    regis_dict['password'] = gui.password
-    regis_dict['type'] = 'register'
-    return regis_dict
+    user_cred = {}
+    user_cred['username'] = gui.username
+    user_cred['password'] = gui.password
+    empty_box = any(value == "" for value in user_cred.values()) #checks if username or password were not filled
+    if empty_box:
+        return {} #invalid attempt
+    return user_cred
 
 
-def check_login(client_socket: socket.socket, login_data: Dict) -> Dict:
-    client_socket.sendall(login_data)
-    response = client_socket.recv(1024)
+def get_page_num(gui: GUI) -> Dict:
+    """
+    Gets requested page number from gui
+    """
+    page_num = {}
+    #page_num["page_num"] = gui.
+    return page_num
+
+
+def request_server(client_socket: socket.socket, request_dict: Dict) -> Dict:
+    """
+    Sends request dictionary to server and recieves server response
+    """
+    request_json = json.dumps(request_dict)
+    client_socket.sendall(request_json.encode("utf-8"))
+    response_json = client_socket.recv(1024).decode("utf-8") #error message not dictionary; need to fix
+    response = json.loads(response_json)
     return response
     
 
