@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Optional
 from logging import getLogger
 from concurrent.futures import ThreadPoolExecutor
+from platform import processor, system
 
 logger = getLogger(__name__)
 
@@ -125,6 +126,20 @@ def convert_video(
         audio_bitrate (str): The audio bitrate for the output file.
         segment_length (float): The length of each segment in seconds. (Approximate - video may not split exactly at this length)
     """
+    logger.info(
+        f"Converting video: {input_file} to {output_file} with target height {target_height}"
+    )
+
+    if system() == "Darwin" and processor() == "arm":
+        # we're running on the m serires: use the hardware acceleration
+        logger.debug("Using Apple silicon hardware acceleration.")
+        hw_accel = "h264_videotoolbox"
+    else:
+        # unknown! use the software encoder
+        # there's more hardware acceleration stuff, but... i'm the one running this,
+        # so i really only care about my system.
+        logger.debug("Using software encoding - good luck.")
+        hw_accel = "libx264"
     # Alright this command's a bit of a mess, but:
     # It takes the input file, re-encodes it (video with libx264 w/preset and crf; audio with aac),
     # with the max bitrate set to the video_bitrate, and the audio bitrate set to audio_bitrate.
@@ -136,7 +151,7 @@ def convert_video(
             "-i",
             str(input_file),
             "-c:v",
-            "libx264",
+            hw_accel,
             "-preset",
             preset,
             "-crf",
@@ -165,7 +180,52 @@ def convert_video(
         raise RuntimeError(
             f"FFmpeg failed with error: {process.stderr.decode('utf-8')}"
         )
-    logger.info(f"Video converted and split into {segment_length} segments.")
+    logger.info(f"Video {input_file} converted to {output_file}")
+
+
+def generate_thumbnail(
+    video: Path, output_file: Path, video_position: float = 0.3
+) -> None:
+    """
+    Generate a thumbnail for a video file using FFmpeg. (Around 30% into the video by default)
+
+    Args:
+        video (Path): The path to the input video file.
+        output_file (Path): The path to the output thumbnail image file.
+        video_position (float, optional): The position in the video to capture the thumbnail. Defaults to 0.3 (30% into the video).
+    """
+    video_position = min(max(video_position, 0), 1)  # clamp between 0 and 1
+    video_info = get_video_info(video)
+    if not video_info:
+        logger.error("Failed to get video info.")
+        raise RuntimeError("Failed to get video info.")
+    duration = video_info.get("duration", 0)
+    if duration <= 0:
+        logger.error("Invalid video duration.")
+        raise RuntimeError("Invalid video duration.")
+    time = duration * video_position  # 30% into the video
+    process = subprocess.run(
+        [
+            "ffmpeg",
+            "-ss",
+            str(time),
+            "-i",
+            str(video),
+            "-vframes",
+            "1",
+            "-q:v",
+            "2",
+            str(output_file),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if process.returncode != 0:
+        logger.error(f"FFmpeg error: {process.stderr}")
+        raise RuntimeError(
+            f"FFmpeg failed with error: {process.stderr.decode('utf-8')}"
+        )
+    logger.info(f"Thumbnail generated: {output_file}")
 
 
 def process_video(video: Path, max_workers: Optional[int] = 2) -> None:
@@ -207,10 +267,12 @@ def process_video(video: Path, max_workers: Optional[int] = 2) -> None:
         logger.error("No valid resolution configurations found.")
         raise RuntimeError("No valid resolution configurations found.")
 
+    # note that, for scalability, we should really be using a separate worker process
+    # and we'll submit the videos to a queue that will then be processed by the worker.
+    # for now, though, this is fine.
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for height, name, crf, preset, video_bitrate, audio_bitrate in valid_configs:
             output_file = video.parent / f"{video.stem}_{name}{video.suffix}"
-            logger.info(f"Processing {name} ({height}p) video...")
             executor.submit(
                 convert_video,
                 video,
@@ -223,3 +285,17 @@ def process_video(video: Path, max_workers: Optional[int] = 2) -> None:
                 audio_bitrate,
                 1000000000,  # segment length in seconds
             )
+
+
+if __name__ == "__main__":
+    import logging
+
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.DEBUG,
+    )
+    generate_thumbnail(
+        Path("sys_on_fys_final.mp4"),
+        Path("sys_on_fys_final_thumbnail.jpg"),
+    )
+    # process_video(Path("sys_on_fys_final.mp4"), None)
