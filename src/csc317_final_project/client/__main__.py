@@ -137,8 +137,12 @@ def run_client(gui: GUI) -> None:
         while True:
             if gui.login_flag.is_set():
                 login_data = get_login_data()
+                server_response = check_login(login_data)
             if gui.registration_flag.is_set():
                 regis_data = get_registration_data()
+                server_response = check_login(regis_data)
+
+            #give data to gui
                 
 
 
@@ -180,7 +184,7 @@ def get_login_data(gui: GUI):
     login_dict = {}
     login_dict['username'] = gui.username #get username from gui
     login_dict['password'] = gui.password #get password from gui
-    login_dict['register'] = False
+    login_dict['type'] = 'login'
     return login_dict
 
 def get_registration_data(gui: GUI):
@@ -190,13 +194,14 @@ def get_registration_data(gui: GUI):
     regis_dict = {}
     regis_dict['username'] = gui.username
     regis_dict['password'] = gui.password
-    regis_dict['register'] = True
+    regis_dict['type'] = 'register'
     return regis_dict
 
 
-def check_login(client_socket: socket.socket, login_data: Dict) -> bool:
+def check_login(client_socket: socket.socket, login_data: Dict) -> Dict:
     client_socket.sendall(login_data)
-    client_socket.recv(1024)
+    response = client_socket.recv(1024)
+    return response
     
 
 if __name__ == "__main__":
@@ -204,4 +209,3 @@ if __name__ == "__main__":
     gui.run_gui()
     network_thread = threading.Thread(target = run_client)
     network_thread.start()    
-
