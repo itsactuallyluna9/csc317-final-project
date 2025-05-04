@@ -245,7 +245,8 @@ class GUI(QtWidgets.QWidget):
             
 
 
-if __name__ == "__main__":
+
+def run_gui():
     app = QtWidgets.QApplication([])
 
     button = GUI(["Someone", "Someone_else", "A_third_person"])
