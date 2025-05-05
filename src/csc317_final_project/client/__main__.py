@@ -286,7 +286,21 @@ def request_server(client_socket: socket.socket, request_dict: Dict) -> Dict:
     response_json = client_socket.recv(1024).decode("utf-8") #error message not dictionary; need to fix
     response = json.loads(response_json)
     return response
-    
+
+
+def delete_video(client_socket: socket.socket, video_id: int) -> None:
+    """
+    Deletes the video from the server and prints the response from the server. 
+    """
+    request_dict = {}
+    request_dict['type'] = 'DELETE'
+    request_dict['video_id'] = video_id
+    response = request_server(client_socket, request_dict)
+    if response['success']:
+        print('The video has been successfully deleted')
+    else:
+        print('Video Deletion is unsuccessful. Please make sure the video_id is correct and try again.')
+
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
