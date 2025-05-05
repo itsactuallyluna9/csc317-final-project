@@ -6,12 +6,13 @@ Abandon all hope, all ye who enter here. ~Luna
 
 import json
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Executor, wait
 from logging import getLogger
 from pathlib import Path
 from platform import processor, system
-from typing import Dict, Optional
+from typing import Dict
 
+from csc317_final_project.server.db import Database
 from csc317_final_project.server.quality import VideoQuality
 
 logger = getLogger(__name__)
@@ -107,6 +108,7 @@ def convert_video(
     input_file: Path,
     output_path: Path,
     target_height: int,
+    prefix: str,
     crf: int,
     preset: str,
     video_bitrate: str,
@@ -120,6 +122,7 @@ def convert_video(
         input_file (Path): The path to the input video file.
         output_path (Path): The path to where the output video files will be saved. (The files are named {num}.mp4.)
         target_height (int): The target height for the video.
+        prefix (str): The name for the output video files.
         crf (int): The constant rate factor for the video encoding.
         preset (str): The encoding preset for FFmpeg.
         video_bitrate (str): The video bitrate for the output file.
@@ -170,7 +173,9 @@ def convert_video(
             "segment",
             "-segment_time",
             str(segment_length),
-            str(output_path / "%d.mp4"),
+            "-reset_timestamps",
+            "1",
+            str(output_path / f"{prefix}_%d.mp4"),
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -232,16 +237,18 @@ def generate_thumbnail(
     logger.info(f"Thumbnail generated: {output_file}")
 
 
-def process_video(uploaded_video: Path, max_workers: Optional[int] = 2) -> None:
+def process_video(
+    executor: Executor, db: Database, uploaded_video: Path, video_id: int
+) -> None:
     """
     Process an uploaded video file, converting it to a more compatible format and splitting into segments.
     Will also generate a thumbnail for the video. (See generate_thumbnail)
 
-    Will block until the process is complete. This *will* take a while.
-
     Args:
+        executor (Executor): The executor to use for running the FFmpeg commands.
+        db (Database): The database object to update video information.
         uploaded_video (Path): The path to the video file to be processed.
-        max_workers (int, optional): The maximum number of threads to use for processing. Defaults to 2.
+        video_id (int): The ID of the video in the database.
     """
     logger.info(f"Processing video: {uploaded_video}")
     if not does_ffmpeg_exist():
@@ -271,25 +278,38 @@ def process_video(uploaded_video: Path, max_workers: Optional[int] = 2) -> None:
     # note that, for scalability, we should really be using a separate worker process
     # and we'll submit the videos to a queue that will then be processed by the worker.
     # for now, though, this is fine.
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # generate the thumbnail first
+    # generate the thumbnail first
 
-        thumbnail_output_file = uploaded_video.parent / "thumbnail.jpg"
-        executor.submit(generate_thumbnail, uploaded_video, thumbnail_output_file)
+    thumbnail_output_file = uploaded_video.parent / "thumbnail.jpg"
+    executor.submit(generate_thumbnail, uploaded_video, thumbnail_output_file)
 
-        for height, name, crf, preset, video_bitrate, audio_bitrate in valid_configs:  # type: ignore # we're fine
-            output_path = uploaded_video.parent / name
-            output_path.mkdir(parents=True, exist_ok=True)
-            executor.submit(
-                convert_video,
-                uploaded_video,
-                output_path,
-                height,
-                crf,
-                preset,
-                video_bitrate,
-                audio_bitrate,
-                1000000000,  # segment length in seconds
+    for height, name, crf, preset, video_bitrate, audio_bitrate in reversed(
+        valid_configs
+    ):  # type: ignore # we're fine
+        # start from lowest quality and go up
+        output_path = uploaded_video.parent / name
+        output_path.mkdir(parents=True, exist_ok=True)
+        future = executor.submit(
+            convert_video,
+            uploaded_video,
+            output_path,
+            height,
+            f"{video_id}_{name}",
+            crf,
+            preset,
+            video_bitrate,
+            audio_bitrate,
+            100,  # segment length in seconds
+        )
+        if name == valid_configs[0][1]:  # type: ignore # we're fine
+            # this is the last one (highest quality), so we should update the database with the video info
+            # and set the max quality to this one.
+            wait([future])
+            db.update_video_info(
+                video_id,
+                video_info["duration"],
+                len(list((uploaded_video.parent / name).glob("*.mp4"))),
+                VideoQuality.from_string(name).value,
             )
 
 
@@ -300,4 +320,4 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.DEBUG,
     )
-    process_video(Path("sys_on_fys_final.mp4"), None)
+    # process_video(Path("sys_on_fys_final.mp4"), None)
