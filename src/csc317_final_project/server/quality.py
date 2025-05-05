@@ -31,6 +31,27 @@ class VideoQuality(IntEnum):
         else:
             return "Unknown"
 
+    @staticmethod
+    def from_string(quality_str: str):
+        if quality_str == "4K":
+            return VideoQuality.FOUR_K
+        elif quality_str == "2K":
+            return VideoQuality.TWO_K
+        elif quality_str == "1080p":
+            return VideoQuality.ONE_K
+        elif quality_str == "720p":
+            return VideoQuality.SEVEN_TWENTY_P
+        elif quality_str == "480p":
+            return VideoQuality.FOUR_EIGHTY_P
+        elif quality_str == "360p":
+            return VideoQuality.THREE_SIXTY_P
+        elif quality_str == "240p":
+            return VideoQuality.TWO_FORTY_P
+        elif quality_str == "144p":
+            return VideoQuality.ONE_FORTY_FOUR_P
+        else:
+            raise ValueError(f"Unknown video quality: {quality_str}")
+
     def get_resolution_config(self):
         # height, name, crf(constant rate factor - lower is better)
         # preset, video bitrate, audio bitrate

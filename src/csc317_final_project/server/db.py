@@ -2,6 +2,7 @@ import sqlite3
 from pathlib import Path
 from threading import RLock
 from typing import Optional
+
 import bcrypt
 
 
@@ -54,6 +55,7 @@ class Database:
             ).fetchone()[0]
 
         result = {
+            "type": "USERS",
             "result": list(map(row_to_dict, users)),
             "current_page": page_num,
             "max_page": user_count // self.MAX_ITEMS_PER_PAGE,
@@ -87,6 +89,7 @@ class Database:
             ).fetchone()[0]
 
         result = {
+            "type": "VIDEOS",
             "result": list(map(row_to_dict, videos)),
             "current_page": page_num,
             "max_page": video_count // self.MAX_ITEMS_PER_PAGE,
@@ -123,7 +126,9 @@ class Database:
                 "SELECT * FROM users WHERE username = ?", (username,)
             ).fetchone()
 
-        if user is not None and bcrypt.checkpw(password.encode('utf-8'), user["password"].encode('utf-8')):  # TODO: hash | checking hash using bcrypt
+        if user is not None and bcrypt.checkpw(
+            password.encode("utf-8"), user["password"].encode("utf-8")
+        ):  # TODO: hash | checking hash using bcrypt
             return
         raise Exception("Invalid username or password")
 
@@ -142,13 +147,16 @@ class Database:
 
             if user is not None:
                 raise Exception("Username already exists")
-            
+
             salt = bcrypt.gensalt()
-            hashpw = bcrypt.hashpw(password.encode('utf-8'), salt)
+            hashpw = bcrypt.hashpw(password.encode("utf-8"), salt)
 
             self.cursor.execute(
                 "INSERT INTO users (username, password) VALUES (?, ?)",
-                (username, hashpw.decode('utf-8')),  # TODO: hash! | added hashing here, decodes at end to save in db as string
+                (
+                    username,
+                    hashpw.decode("utf-8"),
+                ),  # TODO: hash! | added hashing here, decodes at end to save in db as string
             )
             self.connection.commit()
 
@@ -172,18 +180,19 @@ class Database:
             return self.cursor.lastrowid or -1
 
     def update_video_info(
-        self, video_id: str, length: float, num_segments: int, max_quality: int
+        self, video_id: int, length: float, num_segments: int, max_quality: int
     ) -> None:
         """
         Update the video information in the database. Basically, part 2 of the upload process.
 
         Args:
-            video_id (str): The ID of the video.
+            video_id (int): The ID of the video.
             length (float): The length of the video.
             num_segments (int): The number of segments in the video.
             max_quality (int): The maximum quality of the video.
         """
         with self.lock:
+            # print(f"Updating video info: {video_id}, {length}, {num_segments}, {max_quality}")
             self.cursor.execute(
                 "UPDATE videos SET length = ?, num_segments = ?, max_quality = ? WHERE id = ?",
                 (length, num_segments, max_quality, video_id),

@@ -1,6 +1,7 @@
 import json
 import socket
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from pathlib import Path
 from time import sleep
@@ -9,6 +10,7 @@ from typing import Optional, Tuple
 from csc317_final_project.server.db import Database
 from csc317_final_project.server.ffmpeg import process_video
 from csc317_final_project.server.fs import (
+    get_original_video_path,
     get_segment_path,
     get_video_root_path,
 )
@@ -38,6 +40,9 @@ class Server:
         self.port = port
         self.path = server_path
         self.db = Database(server_path)
+        self.worker_pool = ThreadPoolExecutor(
+            max_workers=8, thread_name_prefix="worker"
+        )
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         while True:
             try:
@@ -71,6 +76,9 @@ class Server:
         finally:
             self.server.close()
             logger.info("Server socket closed.")
+            logger.info("Shutting down worker pool...")
+            self.worker_pool.shutdown(wait=True)
+            logger.info("Worker pool shut down.")
 
     def handle_client(self, client: ClientState) -> None:
         """
@@ -158,7 +166,7 @@ class Server:
                 ),
             )
 
-        elif recieved_obj["type"] == "VIDEO_UPLOAD":
+        elif recieved_obj["type"] == "UPLOAD":
             # upload!!!
             if client.username is None:
                 raise Exception("Client not logged in")
@@ -170,7 +178,28 @@ class Server:
             video_root.mkdir(parents=True, exist_ok=True)
             original_video = video_root / f"original{file_ext}"
             upload(client.conn, original_video, file_size)
-            process_video(original_video)
+            self.worker_pool.submit(
+                process_video, self.worker_pool, self.db, original_video, video_id
+            )
+            return {"success": True}
+
+        elif recieved_obj["type"] == "DBG_REPROCESS_VIDEO":
+            # debug - reprocess video
+            video_id = recieved_obj["video_id"]
+            video_root = get_video_root_path(self.path, str(video_id))
+            # remove all files except the original video
+            for file in video_root.glob("*"):
+                if "original" not in file.name:
+                    if file.is_dir():
+                        for subfile in file.glob("*"):
+                            subfile.unlink()
+                        file.rmdir()
+                    else:
+                        file.unlink()
+            original_video = get_original_video_path(self.path, str(video_id))
+            self.worker_pool.submit(
+                process_video, self.worker_pool, self.db, original_video, video_id
+            )
             return {"success": True}
 
         elif recieved_obj["type"] == "VIDEO_INFO":
