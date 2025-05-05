@@ -198,3 +198,17 @@ class Database:
                 (length, num_segments, max_quality, video_id),
             )
             self.connection.commit()
+
+    def delete(self, video_id: str) -> None:
+        """
+        Deletes the video information stored in the database.
+
+        Args:
+            video_id (str): The ID of the video.
+        """
+        with self.lock:
+            self.cursor.execute(
+                "DELETE FROM videos WHERE id = ?",
+                (video_id)
+            )
+            self.connection.commit()
