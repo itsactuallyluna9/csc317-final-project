@@ -1,6 +1,7 @@
 import socket
 import json
 import threading
+import time
 from typing import Optional, Dict, Union
 from pathlib import Path
 from wonderful_gui import GUI
@@ -107,9 +108,11 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
             last_page_request = {}
             if not previous_pages:
                 last_page_request["type"] = "USERS"
+                gui.current_phase = "USERS"
             else:
                 last_page_request["type"] = "VIDEO_PAGE"
                 last_page_request["author"] = author
+                gui.current_phase = "VIDEO_PAGE"
                 in_videos_page = True
             last_page_request["page_num"] = last_page_num
             last_page = request_server(client_socket, last_page_request)
@@ -157,15 +160,46 @@ def request_video(client_socket: socket.socket, gui: GUI, starting_segment: int,
     return
         
     
-def run_video(gui: GUI, stop_signal: threading.Event):
+def run_video(client_socket: socket.socket, gui: GUI, num_segment: int, stop_signal: threading.Event):
     """
     Gives video segments to gui and responds to video flags in gui
     """
+    #give first video
     while True:
         pass
-        #if gui flag for changing video time
-        #
-        #if gui change video quality
+        #if gui.(next_segment_flag).is_set():
+            #gui.(next_segment_flag) = False
+
+        #if gui.( flag for changing video time).is_set():
+            #gui.( flag for changing video time) = False
+            #
+
+        #if gui.( change video quality).is_set():
+            #gui.( change video quality) = False
+            #stop_signal.set()
+            #segment_num = gui.(current_segement_number)
+            #new_quality = gui.(quality)
+            #download_video_thread = threading.Thread(target=request_video,
+            #                                         args=(client_socket,
+            #                                               gui,
+            #                                               segment_num,
+            #                                               new_quality,
+            #                                               num_segment,
+            #                                               stop_signal),
+            #                                               daemon = True)
+            #while stop_signal.is_set():
+                #time.sleep(0.1)
+            #download_video_thread.start()
+            #get_segment(quality, segment_num)
+            #give first segment to gui
+
+
+def get_segment(video_id: int, quality: int, segment_num: int) -> None:
+    """
+    gets video segment and gives it to gui
+    """
+    #video = 
+    pass
 
 
 def send_to_gui(server_response: Dict, gui: GUI) -> None:
