@@ -86,7 +86,7 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
             author_request = {}
             author_request["type"] = "VIDEO_PAGE"
             author_request["author"] = author
-            author_request["page_num"] = 1
+            author_request["page_num"] = 0
             author_page = request_server(client_socket, author_request)
             #check errors
             send_to_gui(author_page, gui)
@@ -96,7 +96,7 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
             previous_pages = []
             home_request = {}
             home_request["type"] = "USERS"
-            home_request["page_num"] = 1
+            home_request["page_num"] = 0
             home_page = request_server(client_socket, home_request)
             #check errors
             send_to_gui(home_page, gui)
@@ -132,9 +132,9 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
                                                            stop_signal))
             download_video_thread.start()
 
-            if gui.upload_flag.is_set():
-                gui.upload_flag = False
-                upload_video(client_socket, gui.upload_file_path)
+        if gui.upload_flag.is_set():
+            gui.upload_flag = False
+            upload_video(client_socket, gui.upload_file_path)
 
 
 def request_video(client_socket: socket.socket, gui: GUI, starting_segment: int, quality: int, num_segment: int, stop_signal: threading.Event) -> None:
@@ -181,8 +181,8 @@ def get_user_credentials(gui: GUI) -> Dict:
     Gets and checks username and password from gui
     """
     user_cred = {}
-    user_cred['username'] = gui.username
-    user_cred['password'] = gui.password
+    user_cred['username'] = gui.login_page.username
+    user_cred['password'] = gui.login_page.password
     empty_box = any(value == "" for value in user_cred.values()) #checks if username or password were not filled
     if empty_box:
         return {} #invalid attempt
