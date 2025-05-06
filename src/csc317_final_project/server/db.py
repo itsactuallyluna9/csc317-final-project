@@ -128,7 +128,7 @@ class Database:
 
         if user is not None and bcrypt.checkpw(
             password.encode("utf-8"), user["password"].encode("utf-8")
-        ):  # TODO: hash | checking hash using bcrypt
+        ):
             return
         raise Exception("Invalid username or password")
 
@@ -156,7 +156,7 @@ class Database:
                 (
                     username,
                     hashpw.decode("utf-8"),
-                ),  # TODO: hash! | added hashing here, decodes at end to save in db as string
+                ),
             )
             self.connection.commit()
 
