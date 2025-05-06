@@ -255,7 +255,8 @@ def request_video(client_socket: socket.socket, segment_dir: TemporaryDirectory,
         extended_segment_name = Path(segment_dir).joinpath(segment_name)
 
         if Path(extended_segment_name).exists():
-            break #stop segment download if the segment has already been downloaded
+            next_segment += 1
+            continue #go to next segment for downloading if the current segment has already been downloaded
 
         with thread_lock:
             current_segment.put(segment_name) #stores current segment being downloaded for checking in network_thread
