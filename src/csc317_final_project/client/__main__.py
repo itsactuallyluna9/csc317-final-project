@@ -188,6 +188,16 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
 
     while True:
         if video_path.exists():
+            with thread_lock:
+                downloading_segment = ""
+
+                if current_segment.qsize > 0:
+                    downloading_segment = current_segment.get()
+                    current_segment.put(downloading_segment)
+
+            if downloading_segment == video:
+                continue
+            
             gui.next_segment = video_path
             break #go back to checking flags in run_video
 
