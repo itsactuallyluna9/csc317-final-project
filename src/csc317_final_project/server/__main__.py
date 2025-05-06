@@ -1,7 +1,7 @@
 import json
+import shutil
 import socket
 import threading
-import shutil
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 from pathlib import Path
@@ -216,12 +216,12 @@ class Server:
             author = recieved_obj.get("author", None)
             videos = self.db.get_video_page(page_num, author)
             return videos
-        
+
         elif recieved_obj["type"] == "DELETE":
             # remove video from database and remove folder
             video_id = recieved_obj["video_id"]
             video_path = get_video_root_path(self.path, video_id)
-            
+
             try:
                 if video_path.exists():
                     self.db.delete(video_id)
