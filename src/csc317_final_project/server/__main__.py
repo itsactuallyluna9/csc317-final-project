@@ -41,10 +41,14 @@ class Server:
         self.port = port
         self.path = server_path
         self.db = Database(server_path)
+        # we primarly use the worker pool for video processing,
+        # so we're limiting it to 8 threads (because ffmpeg won't actually obey this)
+        # this is basically as high as i can get away with atm
         self.worker_pool = ThreadPoolExecutor(
             max_workers=8, thread_name_prefix="worker"
         )
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # bind to port, waiting if needed
         while True:
             try:
                 self.server.bind((self.host, self.port))
@@ -78,6 +82,7 @@ class Server:
             self.server.close()
             logger.info("Server socket closed.")
             logger.info("Shutting down worker pool...")
+            # wait for all currently running tasks to finish
             self.worker_pool.shutdown(wait=True)
             logger.info("Worker pool shut down.")
 
@@ -97,12 +102,16 @@ class Server:
                 if to_client:
                     logger.debug(f"Sending message to {client.addr}: {to_client}")
                     send_obj(client.conn, to_client)
+                else:
+                    # ensure client gets *something* back
+                    send_obj(client.conn, {})
             except Exception as e:
                 logger.error(f"Error handling command for client {client.addr}: {e}")
                 send_obj(
                     client.conn,
                     {
                         "type": "ERROR",
+                        # truthfully, not the best way to report errors. it works tho.
                         "message": str(e),
                     },
                 )
@@ -110,6 +119,18 @@ class Server:
         client.conn.close()
 
     def handle_command(self, client: ClientState, recieved_obj: dict) -> Optional[dict]:
+        """
+        Handle a command from the client.
+        This method will parse the command and call the appropriate function to handle it.
+
+        Args:
+            client (ClientState): The client state object.
+            recieved_obj (dict): The command object received from the client.
+
+        Returns:
+            Optional[dict]: The response object to send back to the client.
+        """
+
         # handling to upload, modify videos
         # data handling for clients gui and actions below
         if recieved_obj["type"] == "LOGIN":
@@ -222,6 +243,11 @@ class Server:
             video_id = recieved_obj["video_id"]
             video_path = get_video_root_path(self.path, video_id)
 
+            if client.username is None:
+                raise Exception("Client not logged in")
+            if not self.db.is_video_owned_by_user(video_id, client.username):
+                raise Exception("Client not owner of video")
+
             try:
                 if video_path.exists():
                     self.db.delete(video_id)
@@ -311,11 +337,13 @@ def send_obj(conn: socket.socket, obj: dict) -> None:
 def main():
     import logging
 
+    # set up logging so it's actually visible
     logging.basicConfig(
         format="%(asctime)s - %(name)s (%(threadName)s) - %(levelname)s - %(message)s",
         level=logging.DEBUG,
     )
 
+    # let's do this
     s = Server(Path("server_data"))
     s.start()
 

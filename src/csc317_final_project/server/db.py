@@ -37,7 +37,7 @@ class Database:
         self.lock = RLock()  # in case we need to use shenanigans :>
         self.cursor = self.connection.cursor()
 
-    def get_users_page(self, page_num: int):
+    def get_users_page(self, page_num: int) -> dict:
         """
         Get a page of users from the database.
 
@@ -65,7 +65,7 @@ class Database:
 
         return result
 
-    def get_video_page(self, page_num: int, author_name: Optional[str] = None):
+    def get_video_page(self, page_num: int, author_name: Optional[str] = None) -> dict:
         """
         Get a page of videos from the database.
 
@@ -99,7 +99,7 @@ class Database:
 
         return result
 
-    def get_video_info(self, video_id: str):
+    def get_video_info(self, video_id: str) -> Optional[dict]:
         """
         Get information about a video from the database.
 
@@ -199,13 +199,32 @@ class Database:
             )
             self.connection.commit()
 
-    def delete(self, video_id: str) -> None:
+    def delete(self, video_id: int) -> None:
         """
         Deletes the video information stored in the database.
 
         Args:
-            video_id (str): The ID of the video.
+            video_id (int): The ID of the video.
         """
         with self.lock:
-            self.cursor.execute("DELETE FROM videos WHERE id = ?", (video_id))
+            self.cursor.execute("DELETE FROM videos WHERE id = ?", (video_id,))
             self.connection.commit()
+
+    def is_video_owned_by_user(self, video_id: int, username: str) -> bool:
+        """
+        Check if the video is owned by the user.
+
+        Args:
+            video_id (int): The ID of the video.
+            username (str): The username of the user.
+
+        Returns:
+            bool: True if the video is owned by the user, False otherwise.
+        """
+        with self.lock:
+            video = self.cursor.execute(
+                "SELECT * FROM videos WHERE id = ? AND author = ?",
+                (video_id, username),
+            ).fetchone()
+
+            return video is not None

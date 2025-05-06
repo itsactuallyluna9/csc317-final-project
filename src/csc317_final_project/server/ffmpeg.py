@@ -140,7 +140,7 @@ def convert_video(
     else:
         # unknown! use the software encoder
         # there's more hardware acceleration stuff, but... i'm the one running this,
-        # so i really only care about my system.
+        # so i really only care about my system. ~luna
         logger.debug("Using software encoding - good luck.")
         hw_accel = "libx264"
     # Alright this command's a bit of a mess, but:
@@ -283,9 +283,9 @@ def process_video(
     thumbnail_output_file = uploaded_video.parent / "thumbnail.jpg"
     executor.submit(generate_thumbnail, uploaded_video, thumbnail_output_file)
 
-    for height, name, crf, preset, video_bitrate, audio_bitrate in reversed(
+    for height, name, crf, preset, video_bitrate, audio_bitrate in reversed(  # type: ignore # we're fine as we filter it above
         valid_configs
-    ):  # type: ignore # we're fine
+    ):
         # start from lowest quality and go up
         output_path = uploaded_video.parent / name
         output_path.mkdir(parents=True, exist_ok=True)
@@ -301,7 +301,7 @@ def process_video(
             audio_bitrate,
             100,  # segment length in seconds
         )
-        if name == valid_configs[0][1]:  # type: ignore # we're fine
+        if name == valid_configs[0][1]:  # type: ignore # we're still fine
             # this is the last one (highest quality), so we should update the database with the video info
             # and set the max quality to this one.
             wait([future])

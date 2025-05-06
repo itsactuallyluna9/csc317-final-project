@@ -1,4 +1,5 @@
 from enum import IntEnum
+from typing import Optional
 
 
 class VideoQuality(IntEnum):
@@ -32,7 +33,17 @@ class VideoQuality(IntEnum):
             return "Unknown"
 
     @staticmethod
-    def from_string(quality_str: str):
+    def from_string(quality_str: str) -> "VideoQuality":
+        """
+        Convert a string representation of video quality to the VideoQuality enum.
+
+        Args:
+            quality_str (str): The string representation of video quality.
+
+        Returns:
+            VideoQuality: The corresponding VideoQuality enum value.
+        """
+
         if quality_str == "4K":
             return VideoQuality.FOUR_K
         elif quality_str == "2K":
@@ -52,7 +63,21 @@ class VideoQuality(IntEnum):
         else:
             raise ValueError(f"Unknown video quality: {quality_str}")
 
-    def get_resolution_config(self):
+    def get_resolution_config(self) -> Optional[tuple]:
+        """
+        Get the resolution configuration for the video quality.
+
+        Returns:
+            tuple: A tuple containing the resolution configuration.
+                The tuple contains:
+                    - height (int): The height of the video in pixels.
+                    - name (str): The name of the video quality.
+                    - crf (int): The constant rate factor (lower is better).
+                    - preset (str): The preset for the video encoding.
+                    - video_bitrate (str): The video bitrate
+                    - audio_bitrate (str): The audio bitrate.
+        """
+
         # height, name, crf(constant rate factor - lower is better)
         # preset, video bitrate, audio bitrate
         if self == VideoQuality.FOUR_K:
@@ -74,7 +99,14 @@ class VideoQuality(IntEnum):
         else:
             return None
 
-    def get_video_height(self):
+    def get_video_height(self) -> int:
+        """
+        Get the height of the video based on the quality.
+
+        Returns:
+            int: The height of the video in pixels.
+        """
+
         if self == VideoQuality.FOUR_K:
             return 2160
         elif self == VideoQuality.TWO_K:
