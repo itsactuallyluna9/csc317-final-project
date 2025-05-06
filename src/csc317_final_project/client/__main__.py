@@ -6,6 +6,7 @@ from typing import Optional, Dict, Union
 from pathlib import Path
 from wonderful_gui import GUI
 from PySide6 import QtWidgets
+from queue import Queue
 
 def run_client(gui: GUI) -> None:
     """
@@ -17,8 +18,9 @@ def run_client(gui: GUI) -> None:
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         client_socket.connect((server_ip, server_port))
-        login(client_socket, gui)
-        navigate(client_socket, gui)
+        while True:
+            login(client_socket, gui)
+            navigate(client_socket, gui)
 
 
 def login(client_socket: socket.socket, gui: GUI) -> None:
@@ -32,12 +34,11 @@ def login(client_socket: socket.socket, gui: GUI) -> None:
                 if login_data: #continues if valid attempt
                     login_data["type"] = "LOGIN"
                     server_response = request_server(client_socket, login_data)
-                    if server_response["type"] == "ERROR": #error message form server not dictionary; need to fix
+                    if server_response["type"] == "ERROR":
                         gui.login_failure = True
                     else:
                         gui.server_response = server_response
                         gui.login_success = True
-                        #move login loop to its own function to allow for logout?
                         break
 
             if gui.registration_flag.is_set():
@@ -47,12 +48,11 @@ def login(client_socket: socket.socket, gui: GUI) -> None:
                     regis_data["type"] = "REGISTER"
                     server_response = request_server(client_socket, regis_data)
                     
-                    if server_response["type"] == "ERROR": #error message form server not dictionary; need to fix
+                    if server_response["type"] == "ERROR": 
                         gui.login_failure = True
                     else:
                         gui.server_response = server_response
                         gui.login_success = True
-                        #move login loop to its own function to allow for logout?
                         break
 
 
@@ -63,8 +63,12 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
     """
     in_videos_page = False
     author = ""
-    previous_pages = [] #holds page number of 
+    previous_pages = [] #holds page number of previous pages
+    current_segment = Queue()
     stop_signal = threading.Event()
+    thread_running = threading.Event()
+    thread_lock = threading.Lock()
+
     while True:
         if gui.page_flag.is_set():
             gui.page_flag = False
@@ -122,85 +126,153 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
         if gui.video_flag.is_set():
             gui.video_flag = False
             in_videos_page = False
+            previous_pages.append(gui.current_page)
+
             video_info_request = {}
+            video_id = gui.video_id
             video_info_request["type"] ="VIDEO_INFO"
-            #video_request["video_id"] = get video_id from gui
-            video_info = request_server(client_socket, gui)
+            video_info_request["video_id"] = video_id
+
+            video_info = request_server(client_socket, video_info_request)
+            send_to_gui(video_info, gui)
+
+            starting_quality = video_info["max_quality"]
+            num_segment = video_info["num_segment"]
             download_video_thread = threading.Thread(target=request_video,
                                                      args=(client_socket,
-                                                           gui,
+                                                           video_id,
                                                            0,
-                                                           video_info["max_quality"],
-                                                           video_info["num_segment"],
-                                                           stop_signal))
-            download_video_thread.start()
+                                                           starting_quality,
+                                                           num_segment,
+                                                           current_segment,
+                                                           stop_signal,
+                                                           thread_running,
+                                                           thread_lock))
+            back_to_navigation = False
+            if thread_running.is_set():
+                time.sleep(0.1)
+                if check_back_to_navigation(gui):
+                    back_to_navigation = True
+            if not back_to_navigation:
+                thread_running.set()
+                download_video_thread.start()
+                run_video(client_socket, gui, 0, starting_quality, current_segment, stop_signal, thread_running, thread_lock)
 
         if gui.upload_flag.is_set():
             gui.upload_flag = False
             upload_video(client_socket, gui.upload_file_path)
 
+        #if gui.logout_flag.is_set():
+            #gui.logout_flag = False
+            #break #return to login
+        
+    
+def run_video(client_socket: socket.socket, gui: GUI, video_id: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+    """
+    Gives video segments to gui and responds to video flags in gui
+    """
+    #need back flag to work here...
+    #give first video?
+    while True:
+        if gui.segment_request_flag.is_set():
+            gui.segment_request_flag = False
+            next_segment = gui.segment_num
+            quality = gui.segment_quality
+            get_segment(client_socket, gui, video_id, quality, next_segment, current_segment, stop_signal, thread_running, thread_lock)
+        
+        if check_back_to_navigation(gui):
+            if thread_running.is_set():
+                with thread_lock:
+                    stop_signal.set() #stop download_video_thread
+            break #returns to navigation to handle flag
 
-def request_video(client_socket: socket.socket, gui: GUI, starting_segment: int, quality: int, num_segment: int, stop_signal: threading.Event) -> None:
+
+def get_segment(client_socket: socket.socket, gui: GUI, video_id: int, quality: int, segment_num: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+    """
+    gets video segment and gives it to gui
+    """
+    video = f"{video_id}_{quality}_{segment_num}.mp4"
+
+    back_to_navigation = False
+    while True:
+        try:
+            with open(video, "r") as segment_file:
+                video_segment = segment_file.read()
+                gui.next_segment = video_segment
+                break #go back to checking flags in run_video
+        except FileNotFoundError:
+            if thread_running.is_set():
+                downloading_segment = ""
+                with thread_lock:
+                    if current_segment.qsize > 0:
+                        downloading_segment = current_segment.get()
+                        current_segment.put(downloading_segment)
+                    else:
+                        continue #wait to see what is being downloaded
+                if downloading_segment == video: #checks if video is being downloaded currently
+                    continue
+                with thread_lock:
+                    stop_signal.set() #stops current download thread if it is downloading different segment than requested segment
+    
+            download_video_thread = threading.Thread(target=request_video,
+                                                     args=(client_socket,
+                                                           video_id,
+                                                           segment_num,
+                                                           quality,
+                                                           segment_num,
+                                                           current_segment,
+                                                           stop_signal,
+                                                           thread_running,
+                                                           thread_lock),
+                                                           daemon = True)
+            while thread_running.is_set() and not back_to_navigation:
+                time.sleep(0.1)
+                if check_back_to_navigation(gui):
+                    back_to_navigation = True
+    
+            if not back_to_navigation: #check whether to continue download attempt
+                thread_running.set()
+                download_video_thread.start()
+
+
+def request_video(client_socket: socket.socket, video_id: int, starting_segment: int, quality: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
     """
     Requests video segments
     """
 
     next_segment = starting_segment
+    last_segment = num_segment - 1
     next_segment_request = {}
     next_segment_request["type"] = "VIDEO"
+    next_segment_request["video_id"] = video_id
 
-    while next_segment <= (num_segment - 1) and not stop_signal.is_set():
+    while next_segment <= last_segment and not stop_signal.is_set():
+
+        segment_name = f"{video_id}_{quality}_{next_segment}.mp4"
+        if Path(segment_name).exists():
+            break #stop segment download if the segment has already been downloaded
+        with thread_lock:
+            current_segment.put(segment_name) #stores current segment being downloaded for checking in network_thread
+
         next_segment_request["segment_num"] = next_segment
         next_segment_request["quality"] = quality
         video_metadata = request_server(client_socket, next_segment_request)
         receive_reply(client_socket, video_metadata)
         next_segment += 1
+        with thread_lock:
+            current_segment.get() #remove stored segement_name
 
-    stop_signal.clear() #allows reuse of stop_signal
-    return
-        
-    
-def run_video(client_socket: socket.socket, gui: GUI, num_segment: int, stop_signal: threading.Event):
+    with thread_lock:
+        stop_signal.clear() #allows reuse of stop_signal
+        thread_running.clear()
+
+
+def check_back_to_navigation(gui: GUI) -> bool:
     """
-    Gives video segments to gui and responds to video flags in gui
+    Returns True when a gui flag that needs to handled in navigation is set
     """
-    #give first video
-    while True:
-        pass
-        #if gui.(next_segment_flag).is_set():
-            #gui.(next_segment_flag) = False
-
-        #if gui.( flag for changing video time).is_set():
-            #gui.( flag for changing video time) = False
-            #
-
-        #if gui.( change video quality).is_set():
-            #gui.( change video quality) = False
-            #stop_signal.set()
-            #segment_num = gui.(current_segement_number)
-            #new_quality = gui.(quality)
-            #download_video_thread = threading.Thread(target=request_video,
-            #                                         args=(client_socket,
-            #                                               gui,
-            #                                               segment_num,
-            #                                               new_quality,
-            #                                               num_segment,
-            #                                               stop_signal),
-            #                                               daemon = True)
-            #while stop_signal.is_set():
-                #time.sleep(0.1)
-            #download_video_thread.start()
-            #get_segment(quality, segment_num)
-            #give first segment to gui
-
-
-def get_segment(video_id: int, quality: int, segment_num: int) -> None:
-    """
-    gets video segment and gives it to gui
-    """
-    #video = 
-    pass
-
+    go_to_navigation = gui.back_flag.is_set() or gui.home_flag.is_set()
+    return go_to_navigation
 
 def send_to_gui(server_response: Dict, gui: GUI) -> None:
     """
@@ -275,17 +347,6 @@ def receive_reply(client_socket: socket.socket, metadata: Dict) -> None:
             file.write(data)
             bytes_received += len(data)
     print(f"Downloaded {file_name} of size {bytes_received} bytes")
-                
-
-def request_server(client_socket: socket.socket, request_dict: Dict) -> Dict:
-    """
-    Sends request dictionary to server and recieves server response
-    """
-    request_json = json.dumps(request_dict)
-    client_socket.sendall(request_json.encode("utf-8"))
-    response_json = client_socket.recv(1024).decode("utf-8") #error message not dictionary; need to fix
-    response = json.loads(response_json)
-    return response
 
 
 def delete_video(client_socket: socket.socket, video_id: int) -> None:
@@ -300,7 +361,18 @@ def delete_video(client_socket: socket.socket, video_id: int) -> None:
         print('The video has been successfully deleted')
     else:
         print('Video Deletion is unsuccessful. Please make sure the video_id is correct and try again.')
+                
 
+def request_server(client_socket: socket.socket, request_dict: Dict) -> Dict:
+    """
+    Sends request dictionary to server and recieves server response
+    """
+    request_json = json.dumps(request_dict)
+    client_socket.sendall(request_json.encode("utf-8"))
+    response_json = client_socket.recv(1024).decode("utf-8") #error message not dictionary; need to fix
+    response = json.loads(response_json)
+    return response
+    
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication([])
