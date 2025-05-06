@@ -13,12 +13,12 @@ def run_client(gui: GUI) -> None:
     """
     connect and handle client connection to FTP server
     """
-
     server_ip = "luna"  # placeholder
     server_port = 2121  # placeholder
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         client_socket.connect((server_ip, server_port))
+
         while True:
             login(client_socket, gui)
             navigate(client_socket, gui)
@@ -32,12 +32,14 @@ def login(client_socket: socket.socket, gui: GUI) -> None:
             if gui.login_flag.is_set():
                 gui.login_flag = False
                 login_finished = handle_login_attempt(client_socket, gui, "LOGIN")
+
                 if login_finished:
                     break
 
             if gui.registration_flag.is_set():
                 gui.registration_flag = False
                 register_finished = handle_login_attempt(client_socket, gui, "REGISTER")
+
                 if register_finished:
                     break
 
@@ -60,11 +62,13 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
             gui.page_flag = False
             page_request = {}
             page_request["page_num"] = gui.current_page
+
             if in_videos_page:
                 page_request["type"] = "VIDEO_PAGE"
                 page_request["author_name"] = author
             else:
                 page_request["type"] = "USERS"
+
             page = request_server(client_socket, page_request)
             #check errors
             send_to_gui(page, gui)
@@ -96,6 +100,7 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
             gui.back_flag = False
             last_page_num = previous_pages.pop()
             last_page_request = {}
+
             if not previous_pages:
                 last_page_request["type"] = "USERS"
                 gui.current_phase = "USERS"
@@ -104,6 +109,7 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
                 last_page_request["author"] = author
                 gui.current_phase = "VIDEO_PAGE"
                 in_videos_page = True
+
             last_page_request["page_num"] = last_page_num
             last_page = request_server(client_socket, last_page_request)
             #check errors
@@ -124,6 +130,7 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
 
             starting_quality = video_info["max_quality"]
             num_segment = video_info["num_segments"]
+
             with TemporaryDirectory() as segment_dir:
                 download_video_thread = threading.Thread(target=request_video,
                                                          args=(client_socket,
@@ -138,6 +145,7 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
                                                                thread_lock))
 
                 back_to_navigation = wait_for_thread_end(gui, thread_running)
+
                 if not back_to_navigation:
                     thread_running.set()
                     download_video_thread.start()
@@ -167,6 +175,7 @@ def run_video(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDire
             if thread_running.is_set():
                 with thread_lock:
                     stop_signal.set() #stop download_video_thread
+
             break #returns to navigation to handle flag
 
 
@@ -182,6 +191,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
                 video_segment = segment_file.read()
                 gui.next_segment = video_segment
                 break #go back to checking flags in run_video
+
         except FileNotFoundError:
             if thread_running.is_set():
                 downloading_segment = ""
@@ -191,8 +201,10 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
                         current_segment.put(downloading_segment)
                     else:
                         continue #wait to see what is being downloaded
+
                 if downloading_segment == video: #checks if video is being downloaded currently
                     continue
+
                 with thread_lock:
                     stop_signal.set() #stops current download thread if it is downloading different segment than requested segment
     
@@ -210,6 +222,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
                                                            daemon = True)
             
             back_to_navigation = wait_for_thread_end(gui, thread_running)
+
             if back_to_navigation: #check whether to continue download attempt
                 break
 
@@ -221,7 +234,6 @@ def request_video(client_socket: socket.socket, segment_dir: TemporaryDirectory,
     """
     Requests video segments
     """
-
     next_segment = starting_segment
     last_segment = num_segment - 1
     next_segment_request = {}
@@ -229,11 +241,12 @@ def request_video(client_socket: socket.socket, segment_dir: TemporaryDirectory,
     next_segment_request["video_id"] = video_id
 
     while next_segment <= last_segment and not stop_signal.is_set():
-
         segment_name = f"{video_id}_{quality}_{next_segment}.mp4"
         extended_segment_name = Path(segment_dir).joinpath(segment_name)
+
         if Path(extended_segment_name).exists():
             break #stop segment download if the segment has already been downloaded
+
         with thread_lock:
             current_segment.put(segment_name) #stores current segment being downloaded for checking in network_thread
 
@@ -242,6 +255,7 @@ def request_video(client_socket: socket.socket, segment_dir: TemporaryDirectory,
         video_metadata = request_server(client_socket, next_segment_request)
         receive_reply(client_socket, video_metadata, segment_dir)
         next_segment += 1
+
         with thread_lock:
             current_segment.get() #remove stored segement_name
 
@@ -264,8 +278,10 @@ def wait_for_thread_end(gui: GUI, thread_running: threading.Event) -> bool:
     """
     while thread_running.is_set():
         time.sleep(0.1)
+
         if check_back_to_navigation(gui):
             return True
+        
     return False
 
 
@@ -282,6 +298,7 @@ def handle_login_attempt(client_socket: socket.socket, gui: GUI, type: str) -> b
     gives login info to server and signals gui with server response
     """
     login_data = get_user_credentials(gui)
+
     if login_data: #continues if valid attempt
         login_data["type"] = type
         server_response = request_server(client_socket, login_data)
@@ -305,8 +322,10 @@ def get_user_credentials(gui: GUI) -> Dict:
     user_cred['username'] = gui.login_page.username
     user_cred['password'] = gui.login_page.password
     empty_box = any(value == "" for value in user_cred.values()) #checks if username or password were not filled
+
     if empty_box:
         return {} #invalid attempt
+    
     return user_cred
 
 
@@ -314,14 +333,15 @@ def get_upload_file(request_dict: Dict[str, Union[str, int]]) -> Optional[bytes]
     """
     Update the request dictionary for upload protocol and loads the file.
     """
-
     try:
         with open(request_dict["target"], "rb") as upload_file:
             byte_file = upload_file.read()
+
         request_dict["file_size"] = Path(request_dict["target"]).stat().st_size
     except FileNotFoundError:
         print(f"File: {request_dict['target']} not found.")
         return None
+    
     return byte_file
 
 
@@ -347,7 +367,6 @@ def receive_reply(client_socket: socket.socket, metadata: Dict, segment_dir: Tem
     request dictionary and recieves the file. Otherwise, recieve and print
     message from server.
     """
-    
     file_name = metadata.get("target")
     extended_file_name = Path(segment_dir).joinpath(file_name)
     file_size = metadata.get("file_size")
@@ -355,13 +374,17 @@ def receive_reply(client_socket: socket.socket, metadata: Dict, segment_dir: Tem
     client_socket.sendall(b"ACK")  # acknowledge the metadata
     # let's do it
     bytes_received = 0
+
     with open(extended_file_name, "wb") as file:
         while bytes_received < file_size:
             data = client_socket.recv(1024)
+
             if not data:
                 break
+
             file.write(data)
             bytes_received += len(data)
+
     print(f"Downloaded {extended_file_name} of size {bytes_received} bytes")
 
 
@@ -373,6 +396,7 @@ def delete_video(client_socket: socket.socket, video_id: int) -> None:
     request_dict['type'] = 'DELETE'
     request_dict['video_id'] = video_id
     response = request_server(client_socket, request_dict)
+
     if response['success']:
         print('The video has been successfully deleted')
     else:
