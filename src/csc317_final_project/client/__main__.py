@@ -149,7 +149,7 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
                 if not back_to_navigation:
                     thread_running.set()
                     download_video_thread.start()
-                    run_video(client_socket, gui, segment_dir, video_id, current_segment, stop_signal, thread_running, thread_lock)
+                    run_video(client_socket, gui, segment_dir, video_id, num_segment, current_segment, stop_signal, thread_running, thread_lock)
 
         if gui.upload_flag.is_set():
             gui.upload_flag = False
@@ -160,7 +160,7 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
             #break #return to login
         
     
-def run_video(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDirectory, video_id: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+def run_video(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDirectory, video_id: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
     """
     Gives video segments to gui and responds to video flags in gui
     """
@@ -169,7 +169,7 @@ def run_video(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDire
             gui.segment_request_flag = False
             next_segment = gui.segment_num
             quality = gui.segment_quality
-            get_segment(client_socket, gui, segment_dir, video_id, quality, next_segment, current_segment, stop_signal, thread_running, thread_lock)
+            get_segment(client_socket, gui, segment_dir, video_id, quality, next_segment, num_segment, current_segment, stop_signal, thread_running, thread_lock)
         
         if check_back_to_navigation(gui):
             if thread_running.is_set():
@@ -179,11 +179,11 @@ def run_video(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDire
             break #returns to navigation to handle flag
 
 
-def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDirectory, video_id: int, quality: int, segment_num: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDirectory, video_id: int, quality: int, segment_id: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
     """
     gets video segment and gives it to gui
     """
-    video = f"{video_id}_{quality}_{segment_num}.mp4"
+    video = f"{video_id}_{quality}_{segment_id}.mp4"
     video_path = Path(segment_dir).joinpath(video)
 
     while True:
@@ -191,7 +191,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
             with thread_lock:
                 downloading_segment = ""
 
-                if current_segment.qsize > 0:
+                if current_segment.qsize() > 0:
                     downloading_segment = current_segment.get()
                     current_segment.put(downloading_segment)
 
@@ -222,9 +222,9 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
                                                      args=(client_socket,
                                                            segment_dir,
                                                            video_id,
-                                                           segment_num,
+                                                           segment_id,
                                                            quality,
-                                                           segment_num,
+                                                           num_segment,
                                                            current_segment,
                                                            stop_signal,
                                                            thread_running,
