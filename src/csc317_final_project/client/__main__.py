@@ -199,7 +199,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
                 continue
 
             gui.next_segment = video_path
-            gui.segment_ready_flag.set()
+            gui.segment_ready_flag = True
             break #go back to checking flags in run_video
 
         else:
