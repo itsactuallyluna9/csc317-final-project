@@ -75,7 +75,7 @@ class Database:
         """
         with self.lock:
             videos = self.cursor.execute(
-                "SELECT title, id FROM videos WHERE author = ? LIMIT ? OFFSET ? AND length > 0",
+                "SELECT title, id, author FROM videos WHERE author = ? AND length > 0 LIMIT ? OFFSET ?",
                 (
                     author_name,
                     self.MAX_ITEMS_PER_PAGE,

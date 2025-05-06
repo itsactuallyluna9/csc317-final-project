@@ -95,6 +95,7 @@ class Server:
             try:
                 to_client = self.handle_command(client, recieved_obj)
                 if to_client:
+                    logger.debug(f"Sending message to {client.addr}: {to_client}")
                     send_obj(client.conn, to_client)
             except Exception as e:
                 logger.error(f"Error handling command for client {client.addr}: {e}")
