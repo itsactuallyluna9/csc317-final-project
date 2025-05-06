@@ -13,8 +13,8 @@ def run_client(gui: GUI) -> None:
     """
     connect and handle client connection to FTP server
     """
-    server_ip = "luna"  # placeholder
-    server_port = 2121  # placeholder
+    server_ip = "luna"
+    server_port = 2121
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
         client_socket.connect((server_ip, server_port))
@@ -184,15 +184,14 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
     gets video segment and gives it to gui
     """
     video = f"{video_id}_{quality}_{segment_num}.mp4"
+    video_path = Path(segment_dir).joinpath(video)
 
     while True:
-        try:
-            with open(video, "r") as segment_file:
-                video_segment = segment_file.read()
-                gui.next_segment = video_segment
-                break #go back to checking flags in run_video
+        if video_path.exists():
+            gui.next_segment = video_path
+            break #go back to checking flags in run_video
 
-        except FileNotFoundError:
+        else:
             if thread_running.is_set():
                 downloading_segment = ""
                 with thread_lock:
