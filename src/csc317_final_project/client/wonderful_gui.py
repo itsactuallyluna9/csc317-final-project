@@ -1,782 +1,437 @@
+import socket
+import json
 import threading
-import sys
-from PySide6 import QtCore, QtWidgets, QtGui, QtMultimedia, QtMultimediaWidgets
+import time
+from tempfile import TemporaryDirectory
+from typing import Optional, Dict, Union
+from pathlib import Path
+from wonderful_gui import GUI
+from PySide6 import QtWidgets
+from queue import Queue
 
-class GUI(QtWidgets.QWidget):
+def run_client(gui: GUI) -> None:
+    """
+    connect and handle client connection to FTP server
+    """
+    server_ip = "luna"
+    server_port = 2121
 
-    def __init__(self):
-        super().__init__()
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+        client_socket.connect((server_ip, server_port))
 
-        self._login_page = self.Login_GUI(self)
-        self._upload_file_path = None
-        self._author_folder = None
-        self._current_phase = None
-        self._current_page = None
-        self._video_id = None
-        self._segment_num = None
-        self._segment_quality = None
-        self._current_segment = None
-        self._next_segment = None
-
-        self._user_flag = threading.Event()
-        self._home_flag = threading.Event()
-        self._video_flag = threading.Event()
-        self._page_flag = threading.Event()
-        self._back_flag = threading.Event()
-        self._login_success = threading.Event()
-        self._login_failure = threading.Event()
-        self._upload_flag = threading.Event()
-        self._response_flag = threading.Event()
-        self._segment_request_flag = threading.Event()
-        self._login_flag = self._login_page.login_flag
-        self._registration_flag = self._login_page.registration_flag
-
-        self._layout = QtWidgets.QStackedLayout(self)
-        self._layout.addWidget(self._login_page)
-        self._server_response = {}
-    
-    def create_user_page(self, user_list, current_page, max_page):
-        self._user_page = self.User_Page_GUI(user_list, current_page, max_page, self)
-        self._layout.addWidget(self._user_page)
-        self._layout.setCurrentWidget(self._user_page)
-    
-    def create_video_page(self, video_list, current_page, max_page, author):
-        print("creating video page...")
-        self._video_page = self.Video_Page_GUI(video_list, current_page, max_page, self, author)
-        self._layout.addWidget(self._video_page)
-        self._layout.setCurrentWidget(self._video_page)
-        print("video page created...")
-
-    def create_video_player(self):
-        self._video_player = self.Video_Outside_GUI({"author": "arjay", "num_segment" : 1}, self)
-        print("video gui created")
-        self._layout.addWidget(self._video_player)
-        print("widget filed")
-        self._layout.setCurrentWidget(self._video_player)
-        print("showing widget...")
-
-    @property
-    def server_response(self):
-        return self._server_response
-    
-    @server_response.setter
-    def server_response(self, v):
-        self._server_response = v
-
-    @property
-    def page_flag(self):
-            return self._page_flag
-    
-    @page_flag.setter
-    def page_flag(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._page_flag.set()
-
-        else:
-            self._page_flag.clear()
-    
-    @property
-    def login_flag(self):
-            return self._login_flag
-    
-    @login_flag.setter
-    def login_flag(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._login_flag.set()
-
-        else:
-            self._login_flag.clear()
-    
-    @property
-    def registration_flag(self):
-            return self._registration_flag
-    
-    @registration_flag.setter
-    def registration_flag(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._registration_flag.set()
-
-        else:
-            self._registration_flag.clear()
-    
-    @property
-    def user_flag(self):
-            return self._user_flag
-    
-    @user_flag.setter
-    def user_flag(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._user_flag.set()
-
-        else:
-            self._user_flag.clear()
-        
-    @property
-    def video_flag(self):
-            return self._video_flag
-    
-    @video_flag.setter
-    def video_flag(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._video_flag.set()
-
-        else:
-            self._video_flag.clear()
-    
-    @property
-    def home_flag(self):
-            return self._home_flag
-    
-    @home_flag.setter
-    def home_flag(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._home_flag.set()
-
-        else:
-            self._home_flag.clear()
-    
-    @property
-    def back_flag(self):
-            return self._back_flag
-    
-    @back_flag.setter
-    def back_flag(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._back_flag.set()
-
-        else:
-            self._back_flag.clear()
-    
-    @property
-    def login_success(self):
-            return self._login_success
-    
-    @login_success.setter
-    def login_success(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._login_success.set()
-
-        else:
-            self._login_success.clear()
-    
-    @property
-    def login_failure(self):
-            return self._login_failure
-    
-    
-    @login_failure.setter
-    def login_failure(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._login_failure.set()
-
-        else:
-            self._login_failure.clear()
-    
-    @property
-    def upload_flag(self):
-            return self._upload_flag
-        
-    @upload_flag.setter
-    def upload_flag(self, v):
-        if not isinstance(v, bool):
-            raise TypeError
-        if v:
-            self._upload_flag.set()
-
-        else:
-            self._upload_flag.clear()
-    
-    @property
-    def response_flag(self):
-            return self._response_flag
-    
-    @response_flag.setter
-    def response_flag(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._response_flag.set()
-
-        else:
-            self._response_flag.clear()
-
-    @property
-    def segment_request_flag(self):
-            return self._segment_request_flag
-    
-    @segment_request_flag.setter
-    def segment_request_flag(self, v):
-
-        if not isinstance(v, bool):
-            raise TypeError
-
-        if v:
-            self._segment_request_flag.set()
-
-        else:
-            self._segment_request_flag.clear()
-        
-    @property
-    def login_page(self):
-        return self._login_page
-    
-    @property
-    def user_page(self):
-        return self._user_page
-    
-    @property
-    def layout(self):
-        return self._layout
-    
-    @property
-    def upload_file_path(self):
-        return self._upload_file_path
-    
-    @property
-    def current_page(self):
-        return self._current_page
-    
-    @current_page.setter
-    def current_page(self, v):
-        if not isinstance(v, int):
-            raise TypeError
-        self._current_page = v
-
-    @property
-    def author_folder(self):
-        return self._author_folder
-    
-    @author_folder.setter
-    def author_folder(self, v):
-        if not isinstance(v, str):
-            raise TypeError
-        self._author_folder = v
-
-    @property
-    def current_phase(self):
-        return self._current_phase
-    
-    @current_phase.setter
-    def current_phase(self, v):
-        if not isinstance(v, str):
-            raise TypeError
-        self._current_phase = v
-    
-    @property
-    def video_id(self):
-        return self._video_id
-    
-    @video_id.setter
-    def video_id(self, v):
-        if not isinstance(v, int):
-            raise TypeError
-        self._video_id = v
-    
-    @property
-    def segment_num(self):
-        return self._segment_num
-    
-    @segment_num.setter
-    def segment_num(self, v):
-        if not isinstance(v, int):
-            raise TypeError
-        self._segment_num = v
-    
-    @property
-    def segment_quality(self):
-        return self._segment_quality
-    
-    @segment_quality.setter
-    def segment_quality(self, v):
-        if not isinstance(v, int):
-            raise TypeError
-        self._segment_quality = v
-
-    @property
-    def current_segment(self):
-        return self._current_segment
-    
-    @current_segment.setter
-    def current_segment(self, v):
-        self._current_segment = v
-
-    
-    class Login_GUI(QtWidgets.QWidget):
-
-        def __init__(self, mainGUI):
-            super().__init__()
-            self._mainGUI = mainGUI
-            self._username = None
-            self._password = None
-            self._login_flag = threading.Event()
-            self._registration_flag = threading.Event()
-
-            self._login_button = QtWidgets.QPushButton("Login")
-            self._login_button.setFixedWidth(100)
-            self._text = QtWidgets.QLabel("Login or Register", alignment=QtCore.Qt.AlignHCenter)
-            self._text.setFont(QtGui.QFont("Times", 20, QtGui.QFont.Bold))
-            self._registration_button = QtWidgets.QPushButton("Register")
-            self._registration_button.setFixedWidth(100)
-            self._username_entry = QtWidgets.QLineEdit("Username")
-            self._username_entry.setFixedWidth(200)
-            self._password_entry = QtWidgets.QLineEdit("Password")
-            self._password_entry.setFixedWidth(200)
-
-            self._layout = QtWidgets.QVBoxLayout(self)
-            self._buttons_layout = QtWidgets.QHBoxLayout()
-            self._layout.addWidget(self._text)
-            self._layout.addWidget(self._username_entry, alignment=QtCore.Qt.AlignHCenter)
-            self._layout.addWidget(self._password_entry, alignment=QtCore.Qt.AlignHCenter)
-            self._buttons_layout.addWidget(self._login_button, alignment=QtCore.Qt.AlignVCenter)
-            self._buttons_layout.addWidget(self._registration_button, alignment=QtCore.Qt.AlignVCenter)
-            self._layout.addLayout(self._buttons_layout)
+        while True:
+            login(client_socket, gui)
+            navigate(client_socket, gui)
 
 
-            self._login_button.clicked.connect(self._login)
-            self._registration_button.clicked.connect(self._register)
+def login(client_socket: socket.socket, gui: GUI) -> None:
+    """
+    Checks and handles login flags from gui
+    """
+    while True: # login loop
+            if gui.login_flag.is_set():
+                gui.login_flag = False
+                login_finished = handle_login_attempt(client_socket, gui, "LOGIN")
 
-        @property
-        def login_flag(self):
-            return self._login_flag
-        
-        @login_flag.setter
-        def login_flag(self, v):
-            if not isinstance(v, bool):
-                raise TypeError
-            
-            if v:
-                self._login_flag.set()
+                if login_finished:
+                    break
 
+            if gui.registration_flag.is_set():
+                gui.registration_flag = False
+                register_finished = handle_login_attempt(client_socket, gui, "REGISTER")
+
+                if register_finished:
+                    break
+
+
+def navigate(client_socket: socket.socket, gui: GUI) -> None:
+    """
+    Check and handles navigation flags from gui
+    Also allows start of downloading and viewing videos
+    """
+    in_videos_page = False
+    author = ""
+    previous_pages = [] #holds page number of previous pages
+    current_segment = Queue()
+    stop_signal = threading.Event()
+    thread_running = threading.Event()
+    thread_lock = threading.Lock()
+
+    while True:
+        if gui.page_flag.is_set():
+            gui.page_flag = False
+            page_request = {}
+            page_request["page_num"] = gui.current_page
+
+            if in_videos_page:
+                page_request["type"] = "VIDEO_PAGE"
+                page_request["author_name"] = author
             else:
-                self._login_flag.clear()
-        
-        @property
-        def registration_flag(self):
-            return self._registration_flag
-        
-        @registration_flag.setter
-        def registration_flag(self, v):
-            if not isinstance(v, bool):
-                raise TypeError
-            
-            if v:
-                self._registration_flag.set()
+                page_request["type"] = "USERS"
 
+            page = request_server(client_socket, page_request)
+            #check errors
+            send_to_gui(page, gui)
+
+        if gui.user_flag.is_set():
+            gui.user_flag = False
+            in_videos_page = True
+            author = gui.author_folder
+            previous_pages.append(gui.current_page)
+            author_request = {}
+            author_request["type"] = "VIDEO_PAGE"
+            author_request["author"] = author
+            author_request["page_num"] = 0
+            author_page = request_server(client_socket, author_request)
+            #check errors
+            send_to_gui(author_page, gui)
+        
+        if gui.home_flag.is_set():
+            gui.home_flag = False
+            previous_pages = []
+            home_request = {}
+            home_request["type"] = "USERS"
+            home_request["page_num"] = 0
+            home_page = request_server(client_socket, home_request)
+            #check errors
+            send_to_gui(home_page, gui)
+        
+        if gui.back_flag.is_set():
+            gui.back_flag = False
+            last_page_num = previous_pages.pop()
+            last_page_request = {}
+
+            if not previous_pages:
+                last_page_request["type"] = "USERS"
+                gui.current_phase = "USERS"
             else:
-                self._registration_flag.clear()
-                
-        @property
-        def username(self):
-            return self._username
-        
-        @property
-        def password(self):
-            return self._password
-        
-        @QtCore.Slot()
-        def _login(self):
-            self._username = self._username_entry.text()
-            self._password = self._password_entry.text()
-            self._login_flag.set()
-            while True:
-                if self._mainGUI.login_success.is_set():
-                    sr = self._mainGUI.server_response
-                    self._mainGUI.create_user_page(sr["result"], sr["current_page"], sr["max_page"])
-                    self._mainGUI.login_success = False
-                    self._mainGUI.current_page = 0
-                    break
-                elif self._mainGUI.login_failure.is_set():
-                    #tell user
-                    self._mainGUI.login_failure = False
-                    break
-            self._mainGUI.layout.setCurrentIndex(1)
+                last_page_request["type"] = "VIDEO_PAGE"
+                last_page_request["author"] = author
+                gui.current_phase = "VIDEO_PAGE"
+                in_videos_page = True
 
+            last_page_request["page_num"] = last_page_num
+            last_page = request_server(client_socket, last_page_request)
+            #check errors
+            send_to_gui(last_page, gui)
+
+        if gui.video_flag.is_set():
+            gui.video_flag = False
+            in_videos_page = False
+            previous_pages.append(gui.current_page)
+
+            video_info_request = {}
+            video_id = gui.video_id
+            video_info_request["type"] ="VIDEO_INFO"
+            video_info_request["video_id"] = video_id
+
+            video_info = request_server(client_socket, video_info_request)
+            send_to_gui(video_info, gui)
+
+            starting_quality = video_info["max_quality"]
+            num_segment = video_info["num_segments"]
+
+            with TemporaryDirectory() as segment_dir:
+                download_video_thread = threading.Thread(target=request_video,
+                                                         args=(client_socket,
+                                                               segment_dir,
+                                                               video_id,
+                                                               0,
+                                                               starting_quality,
+                                                               num_segment,
+                                                               current_segment,
+                                                               stop_signal,
+                                                               thread_running,
+                                                               thread_lock))
+
+                back_to_navigation = wait_for_thread_end(gui, thread_running)
+
+                if not back_to_navigation:
+                    thread_running.set()
+                    download_video_thread.start()
+                    run_video(client_socket, gui, segment_dir, video_id, num_segment, current_segment, stop_signal, thread_running, thread_lock)
+
+        if gui.upload_flag.is_set():
+            gui.upload_flag = False
+            upload_video(client_socket, gui.upload_file_path)
+
+        #if gui.logout_flag.is_set():
+            #gui.logout_flag = False
+            #break #return to login
         
-        @QtCore.Slot()
-        def _register(self):
-            self._username = self._username_entry.text()
-            self._password = self._password_entry.text()
-            self._registration_flag.set()
     
-
-    class User_Page_GUI(QtWidgets.QWidget):
-
-        def __init__(self, user_list, current_page, max_page, mainGUI):
-            super().__init__()
-
-            self._mainGUI = mainGUI
-            self._user_list = user_list
-            self._current_page = current_page
-            self._max_page = max_page
-
-            self._grid = QtWidgets.QGridLayout(self)
-            row_value = 1
-            column_value = 0
-            for user in user_list:
-                user_button = QtWidgets.QPushButton(f"{user['username']}", self)
-                user_button.setFixedSize(100, 100)
-                user_button.clicked.connect(self._folder_clicked)
-                self._grid.addWidget(user_button, row_value, column_value, alignment=QtCore.Qt.AlignTop)
-                if column_value == 4:
-                    column_value = 0
-                    row_value += 1
-                else:
-                    column_value += 1
-            self._back = QtWidgets.QPushButton("<-", self)
-            self._back.setFixedSize(50, 35)
-            self._back.clicked.connect(self._back_page_clicked)
-            self._forward = QtWidgets.QPushButton("->", self)
-            self._forward.setFixedSize(50, 35)
-            self._forward.clicked.connect(self._forward_page_clicked)
-            self._title = QtWidgets.QLabel("Users", alignment=QtCore.Qt.AlignTop)
-            self._title.setFont(QtGui.QFont("Times", 20, QtGui.QFont.Bold))
-            self._home = QtWidgets.QPushButton("HOME", self)
-            self._home.setFixedSize(50, 35)
-            self._home.clicked.connect(self._home_clicked)
-            self._back_real = QtWidgets.QPushButton("BACK", self)
-            self._back_real.setFixedSize(50, 35)
-            self._back_real.clicked.connect(self._back_real_clicked)
-            self._upload = QtWidgets.QPushButton("UPLOAD", self)
-            self._upload.setFixedSize(75, 35)
-            self._upload.clicked.connect(self._upload_clicked)
-            self._grid.addWidget(self._back_real, 0, 1, alignment=QtCore.Qt.AlignTop)
-            self._grid.addWidget(self._home, 0, 2, alignment=QtCore.Qt.AlignTop)
-            self._grid.addWidget(self._upload, 0, 3, alignment=QtCore.Qt.AlignTop)
-            self._grid.addWidget(self._title, 0, 0, alignment=QtCore.Qt.AlignTop)
-            self._grid.addWidget(self._back, row_value + 1, 0, alignment=QtCore.Qt.AlignLeft)
-            self._grid.addWidget(self._forward, row_value + 1, 1, alignment=QtCore.Qt.AlignLeft)
-
-        @QtCore.Slot()
-        def _folder_clicked(self):
-            folder = self.sender()
-            self._mainGUI.author_folder = folder.text()
-            self._mainGUI.user_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    self._mainGUI.response_flag = False
-                    new_video_page(folder.text(), self._mainGUI)
-                    break
-
-        @QtCore.Slot()
-        def _back_real_clicked(self):
-            self._mainGUI.back_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    self._mainGUI.response_flag = False
-                    server_response = self._mainGUI.server_response
-                    if self._mainGUI.current_phase == "VIDEO_PAGE":
-                        new_video_page(server_response["author"], self._mainGUI)
-                        break
-                    elif self._mainGUI.current_phase == "USERS":
-                        new_user_page(self._mainGUI.current_page, self._mainGUI)
-                        break
-                    else:
-                        print("idk man")
-                        break
+def run_video(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDirectory, video_id: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+    """
+    Gives video segments to gui and responds to video flags in gui
+    """
+    while True:
+        if gui.segment_request_flag.is_set():
+            gui.segment_request_flag = False
+            next_segment = gui.segment_num
+            quality = gui.segment_quality
+            get_segment(client_socket, gui, segment_dir, video_id, quality, next_segment, num_segment, current_segment, stop_signal, thread_running, thread_lock)
         
-        @QtCore.Slot()
-        def _home_clicked(self):
-            self._mainGUI.current_page = 0
-            self._mainGUI.home_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    self._mainGUI.response_flag = False
-                    new_user_page(self._mainGUI.current_page, self._mainGUI)
-                    self._mainGUI.response_flag = False
-                    break
+        if check_back_to_navigation(gui):
+            if thread_running.is_set():
+                with thread_lock:
+                    stop_signal.set() #stop download_video_thread
 
-        @QtCore.Slot()
-        def _upload_clicked(self):
-            filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open File', '.')
-            self._mainGUI._upload_file_path = filename[0]
-            self._mainGUI._upload_flag.set()
+            break #returns to navigation to handle flag
 
-        @QtCore.Slot()
-        def _forward_page_clicked(self):
-            if self._mainGUI.current_page == self._max_page:
-                return
-            self._mainGUI.current_page += 1
-            self._mainGUI.page_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    new_user_page(self._mainGUI.current_page, self._mainGUI)
-                    self._mainGUI.response_flag = False
-                    break
 
-        @QtCore.Slot()
-        def _back_page_clicked(self):
-            if self._mainGUI.current_page == 0:
-                return
-            self._mainGUI.current_page -= 1
-            self._mainGUI.page_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    new_user_page(self._mainGUI.current_page, self._mainGUI)
-                    self._mainGUI.response_flag = False
-                    break
-        
+def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDirectory, video_id: int, quality: int, segment_id: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+    """
+    gets video segment and gives it to gui
+    """
+    video = f"{video_id}_{quality}_{segment_id}.mp4"
+    video_path = Path(segment_dir).joinpath(video)
 
-    class Video_Page_GUI(QtWidgets.QWidget):
+    while True:
+        if video_path.exists():
+            with thread_lock:
+                downloading_segment = ""
 
-        def __init__(self, video_list, current_page, max_page, mainGUI, author):
-            super().__init__()
+                if current_segment.qsize() > 0:
+                    downloading_segment = current_segment.get()
+                    current_segment.put(downloading_segment)
 
-            self._mainGUI = mainGUI
-            self._video_list = video_list
-            self._current_page = current_page
-            self._max_page = max_page
+            if downloading_segment == video:
+                continue
 
-            self._grid = QtWidgets.QGridLayout(self)
-            row_value = 1
-            column_value = 0
-            for video in video_list:
-                video_button = QtWidgets.QPushButton(f"{video['title']}", self)
-                video_button.toolTip = video["id"]
-                video_button.setFixedSize(100, 100)
-                video_button.clicked.connect(self._folder_clicked)
-                self._grid.addWidget(video_button, row_value, column_value, alignment=QtCore.Qt.AlignTop)
-                if column_value == 4:
-                    column_value = 0
-                    row_value += 1
-                else:
-                    column_value += 1
-            self._back = QtWidgets.QPushButton("<-", self)
-            self._back.setFixedSize(50, 35)
-            self._back.clicked.connect(self._back_page_clicked)
-            self._forward = QtWidgets.QPushButton("->", self)
-            self._forward.setFixedSize(50, 35)
-            self._forward.clicked.connect(self._forward_page_clicked)
-            self._title = QtWidgets.QLabel(f"{author}", alignment=QtCore.Qt.AlignTop)
-            self._title.setFont(QtGui.QFont("Times", 20, QtGui.QFont.Bold))
-            self._home = QtWidgets.QPushButton("HOME", self)
-            self._home.setFixedSize(50, 35)
-            self._home.clicked.connect(self._home_clicked)
-            self._back_real = QtWidgets.QPushButton("BACK", self)
-            self._back_real.setFixedSize(50, 35)
-            self._back_real.clicked.connect(self._back_real_clicked)
-            self._upload = QtWidgets.QPushButton("UPLOAD", self)
-            self._upload.setFixedSize(75, 35)
-            self._upload.clicked.connect(self._upload_clicked)
-            self._grid.addWidget(self._back_real, 0, 1, alignment=QtCore.Qt.AlignTop)
-            self._grid.addWidget(self._home, 0, 2, alignment=QtCore.Qt.AlignTop)
-            self._grid.addWidget(self._upload, 0, 3, alignment=QtCore.Qt.AlignTop)
-            self._grid.addWidget(self._title, 0, 0, alignment=QtCore.Qt.AlignTop)
-            self._grid.addWidget(self._back, row_value + 1, 0, alignment=QtCore.Qt.AlignLeft)
-            self._grid.addWidget(self._forward, row_value + 1, 1, alignment=QtCore.Qt.AlignLeft)
+            gui.next_segment = video_path
+            gui.segment_ready_flag = True
+            break #go back to checking flags in run_video
 
-        @QtCore.Slot()
-        def _folder_clicked(self):
-            folder = self.sender()
-            id = folder.toolTip
-            self._mainGUI.video_id = id
-            self._mainGUI.video_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    new_video_player(self._mainGUI)
-                    self._mainGUI.response_flag = False
-                    break
-
-        @QtCore.Slot()
-        def _back_real_clicked(self):
-            self._mainGUI.back_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    self._mainGUI.response_flag = False
-                    server_response = self._mainGUI.server_response
-                    if self._mainGUI.current_phase == "VIDEO_PAGE":
-                        new_video_page(server_response["author"], self._mainGUI)
-                        break
-                    elif self._mainGUI.current_phase == "USERS":
-                        new_user_page(self._mainGUI.current_page, self._mainGUI)
-                        break
+        else:
+            if thread_running.is_set():
+                downloading_segment = ""
+                with thread_lock:
+                    if current_segment.qsize > 0:
+                        downloading_segment = current_segment.get()
+                        current_segment.put(downloading_segment)
                     else:
-                        print("idk man")
-                        break
+                        continue #wait to see what is being downloaded
 
-        @QtCore.Slot()
-        def _home_clicked(self):
-            self._mainGUI.current_page = 0
-            self._mainGUI.home_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    new_user_page(self._mainGUI.current_page, self._mainGUI)
-                    print("going home...")
-                    self._mainGUI.response_flag = False
-                    break
+                if downloading_segment == video: #checks if video is being downloaded currently
+                    continue
 
-        @QtCore.Slot()
-        def _upload_clicked(self):
-            filename = QtWidgets.QFileDialog.getOpenFileName(self, 'Open File', '.')
-            self._mainGUI._upload_file_path = filename[0]
-            self._mainGUI._upload_flag.set()
-
-        @QtCore.Slot()
-        def _forward_page_clicked(self):
-            if self._mainGUI.current_page == self._max_page:
-                return
-            self._mainGUI.current_page += 1
-            self._mainGUI.page_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    new_user_page(self._mainGUI.current_page, self._mainGUI)
-                    self._mainGUI.response_flag = False
-                    break
-
-        @QtCore.Slot()
-        def _back_page_clicked(self):
-            if self._mainGUI.current_page == 0:
-                return
-            self._mainGUI.current_page -= 1
-            self._mainGUI.page_flag.set()
-            while True:
-                if self._mainGUI.response_flag.is_set():
-                    new_user_page(self._mainGUI.current_page, self._mainGUI)
-                    self._mainGUI.response_flag = False
-                    break
+                with thread_lock:
+                    stop_signal.set() #stops current download thread if it is downloading different segment than requested segment
     
-    class Video_Outside_GUI(QtWidgets.QWidget):
+            download_video_thread = threading.Thread(target=request_video,
+                                                     args=(client_socket,
+                                                           segment_dir,
+                                                           video_id,
+                                                           segment_id,
+                                                           quality,
+                                                           num_segment,
+                                                           current_segment,
+                                                           stop_signal,
+                                                           thread_running,
+                                                           thread_lock),
+                                                           daemon = True)
+            
+            back_to_navigation = wait_for_thread_end(gui, thread_running)
+
+            if back_to_navigation: #check whether to continue download attempt
+                break
+
+            thread_running.set()
+            download_video_thread.start()
+
+
+def request_video(client_socket: socket.socket, segment_dir: TemporaryDirectory, video_id: int, starting_segment: int, quality: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+    """
+    Requests video segments
+    """
+    next_segment = starting_segment
+    last_segment = num_segment - 1
+    next_segment_request = {}
+    next_segment_request["type"] = "VIDEO"
+    next_segment_request["video_id"] = video_id
+
+    while next_segment <= last_segment and not stop_signal.is_set():
+        segment_name = f"{video_id}_{quality}_{next_segment}.mp4"
+        extended_segment_name = Path(segment_dir).joinpath(segment_name)
+
+        if Path(extended_segment_name).exists():
+            next_segment += 1
+            continue #go to next segment for downloading if the current segment has already been downloaded
+
+        with thread_lock:
+            current_segment.put(segment_name) #stores current segment being downloaded for checking in network_thread
+
+        next_segment_request["segment_id"] = next_segment
+        next_segment_request["quality"] = quality
+        video_metadata = request_server(client_socket, next_segment_request)
+        receive_reply(client_socket, video_metadata, segment_dir)
+        next_segment += 1
+
+        with thread_lock:
+            current_segment.get() #remove stored segement_name
+
+    with thread_lock:
+        stop_signal.clear() #allows reuse of stop_signal
+        thread_running.clear()
+
+
+def check_back_to_navigation(gui: GUI) -> bool:
+    """
+    Returns True when a gui flag that needs to handled in navigation is set
+    """
+    go_to_navigation = gui.back_flag.is_set() or gui.home_flag.is_set() #or gui.logout_flag.is_set()
+    return go_to_navigation
+
+
+def wait_for_thread_end(gui: GUI, thread_running: threading.Event) -> bool:
+    """
+    Waits for download thread to finish stopping
+    """
+    while thread_running.is_set():
+        time.sleep(0.1)
+
+        if check_back_to_navigation(gui):
+            return True
         
-        def __init__(self, video_info, mainGUI):
-            super().__init__()
+    return False
 
-            self._video_info = video_info
 
-            self._layout = QtWidgets.QVBoxLayout(self)
-            self._title = self._title = QtWidgets.QLabel(f"{self._video_info['author']}", alignment=QtCore.Qt.AlignTop)
-            self._title.setFont(QtGui.QFont("Times", 20, QtGui.QFont.Bold))
-            self._video_player = self.VideoPlayer(mainGUI)
-            self._layout.addWidget(self._title)
-            self._layout.addWidget(self._video_player)
+def send_to_gui(server_response: Dict, gui: GUI) -> None:
+    """
+    Informs gui of server response
+    """
+    gui.server_response = server_response
+    gui.response_flag = True
 
-        class VideoPlayer(QtWidgets.QWidget):
 
-            def __init__(self, mainGUI):
-                super().__init__()
+def handle_login_attempt(client_socket: socket.socket, gui: GUI, type: str) -> bool:
+    """
+    gives login info to server and signals gui with server response
+    """
+    login_data = get_user_credentials(gui)
 
-                self._mainGUI = mainGUI
-                self._mediaPlayer = QtMultimedia.QMediaPlayer()
-                self._videoWidget = QtMultimediaWidgets.QVideoWidget()
+    if login_data: #continues if valid attempt
+        login_data["type"] = type
+        server_response = request_server(client_socket, login_data)
+
+        if server_response["type"] == "ERROR":
+            gui.login_failure = True
+            return False
+        
+        gui.server_response = server_response
+        gui.login_success = True
+        return True
+    
+    return False
+
+
+def get_user_credentials(gui: GUI) -> Dict:
+    """
+    Gets and checks username and password from gui
+    """
+    user_cred = {}
+    user_cred['username'] = gui.login_page.username
+    user_cred['password'] = gui.login_page.password
+    empty_box = any(value == "" for value in user_cred.values()) #checks if username or password were not filled
+
+    if empty_box:
+        return {} #invalid attempt
+    
+    return user_cred
+
+
+def get_upload_file(request_dict: Dict[str, Union[str, int]]) -> Optional[bytes]:
+    """
+    Update the request dictionary for upload protocol and loads the file.
+    """
+    try:
+        with open(request_dict["target"], "rb") as upload_file:
+            byte_file = upload_file.read()
+
+        request_dict["file_size"] = Path(request_dict["target"]).stat().st_size
+    except FileNotFoundError:
+        print(f"File: {request_dict['target']} not found.")
+        return None
+    
+    return byte_file
+
+
+def upload_video(
+    client_socket: socket.socket, path: str
+) -> None:
+    """
+    Uploads video to server
+    """
+    request_dict = {}
+    request_dict["type"] = "UPLOAD"
+    request_dict["target"] = path
+    request_dict["title"] = "You have no choice. Deal with it."
+    byte_file = get_upload_file(request_dict)
+
+    request_server(client_socket, request_dict)
+    client_socket.sendall(byte_file)
+
+
+def receive_reply(client_socket: socket.socket, metadata: Dict, segment_dir: TemporaryDirectory) -> None:
+    """
+    Recieves reply from server. If the command type is DOWNLOAD, sends the
+    request dictionary and recieves the file. Otherwise, recieve and print
+    message from server.
+    """
+    file_name = metadata.get("target")
+    extended_file_name = Path(segment_dir).joinpath(file_name)
+    file_size = metadata.get("file_size")
+    print(f"Downloading {extended_file_name} of size {file_size} bytes")
+    client_socket.sendall(b'{"type": "ACK"}')  # acknowledge the metadata
+    # let's do it
+    bytes_received = 0
+
+    with open(extended_file_name, "wb") as file:
+        while bytes_received < file_size:
+            data = client_socket.recv(1024)
+
+            if not data:
+                break
+
+            file.write(data)
+            bytes_received += len(data)
+
+    print(f"Downloaded {extended_file_name} of size {bytes_received} bytes")
+
+
+def delete_video(client_socket: socket.socket, video_id: int) -> None:
+    """
+    Deletes the video from the server and prints the response from the server. 
+    """
+    request_dict = {}
+    request_dict['type'] = 'DELETE'
+    request_dict['video_id'] = video_id
+    response = request_server(client_socket, request_dict)
+
+    if response['success']:
+        print('The video has been successfully deleted')
+    else:
+        print('Video Deletion is unsuccessful. Please make sure the video_id is correct and try again.')
                 
 
-                self._playButton = QtWidgets.QPushButton()
-                self._playButton.setEnabled(False)
-                self._playButton.setFixedHeight(24)
-                self._playButton.clicked.connect(self._play)
+def request_server(client_socket: socket.socket, request_dict: Dict) -> Dict:
+    """
+    Sends request dictionary to server and recieves server response
+    """
+    request_json = json.dumps(request_dict)
+    client_socket.sendall(request_json.encode("utf-8"))
+    response_json = client_socket.recv(1024).decode("utf-8") #error message not dictionary; need to fix
+    response = json.loads(response_json)
+    return response
+    
 
-                self._positionSlider = QtWidgets.QSlider()
-                self._positionSlider.setMinimum(0)
-                self._positionSlider.setMaximum(6) #video length
-                self._positionSlider.sliderMoved.connect(self._setPosition)
-
-                self._statusBar = QtWidgets.QStatusBar()
-                self._statusBar.setFont(QtGui.QFont("Times", 7))
-                self._statusBar.setFixedHeight(14)
-
-                controlLayout = QtWidgets.QHBoxLayout()
-                controlLayout.setContentsMargins(0, 0, 0, 0)
-                controlLayout.addWidget(self._playButton)
-                controlLayout.addWidget(self._positionSlider)
-
-                layout = QtWidgets.QVBoxLayout()
-                layout.addWidget(self._videoWidget)
-                layout.addLayout(controlLayout)
-                layout.addWidget(self._statusBar)
-
-                self.setLayout(layout)
-
-                self._mediaPlayer.setSource(QtCore.QUrl(self._mainGUI.current_segment))
-                self._mediaPlayer.setVideoOutput(self._videoWidget)
-                self._mediaPlayer.sourceChanged.connect(self._mediaStateChanged)
-                self._mediaPlayer.positionChanged.connect(self._positionChanged)
-                self._mediaPlayer.durationChanged.connect(self._durationChanged)
-                self._statusBar.showMessage("Ready")
-
-                self._playButton.setEnabled(True)
-
-                print("built video gui")
-               
-            
-            def _play(self):
-                if self._mediaPlayer.isPlaying:
-                    self._mediaPlayer.pause()
-                else:
-                    self._mediaPlayer.play()
-
-            def _mediaStateChanged(self):
-                if self._mediaPlayer.isPlaying:
-                    self._playButton.setIcon(
-                            self.style().standardIcon(QtWidgets.QStyle.SP_MediaPause))
-                else:
-                    self._playButton.setIcon(
-                            self.style().standardIcon(QtWidgets.QStyle.SP_MediaPlay))
-
-            def _positionChanged(self, position):
-                self._positionSlider.setValue(position)
-
-            def _durationChanged(self, duration):
-                self._positionSlider.setRange(0, duration)
-
-            def _setPosition(self, position):
-                self._mediaPlayer.setPosition(position)
-
-     
-def new_user_page(page_num, mainGUI):
-    sr = mainGUI.server_response
-    mainGUI.create_user_page(sr["result"], sr["current_page"], sr["max_page"])
-    mainGUI.current_page = page_num
-
-def new_video_page(author, mainGUI):
-    sr = mainGUI.server_response
-    print("Server response recieved!")
-    mainGUI.create_video_page(sr["result"], sr["current_page"], sr["max_page"], author)
-    mainGUI.current_page = sr["current_page"]
-
-def new_video_player(mainGUI):
-    mainGUI.create_video_player()
-
-def run_gui():
+if __name__ == "__main__":
     app = QtWidgets.QApplication([])
 
     button = GUI()
+    network_thread = threading.Thread(target = run_client, args=(button, ))
+    network_thread.start()
     button.resize(800, 600)
     button.show()
 
-    sys.exit(app.exec())
+    exit(app.exec())
