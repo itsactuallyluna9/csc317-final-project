@@ -2,6 +2,7 @@ import socket
 import json
 import threading
 import time
+from tempfile import TemporaryDirectory
 from typing import Optional, Dict, Union
 from pathlib import Path
 from wonderful_gui import GUI
@@ -123,22 +124,24 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
 
             starting_quality = video_info["max_quality"]
             num_segment = video_info["num_segments"]
-            download_video_thread = threading.Thread(target=request_video,
-                                                     args=(client_socket,
-                                                           video_id,
-                                                           0,
-                                                           starting_quality,
-                                                           num_segment,
-                                                           current_segment,
-                                                           stop_signal,
-                                                           thread_running,
-                                                           thread_lock))
-            
-            back_to_navigation = wait_for_thread_end(gui, thread_running)
-            if not back_to_navigation:
-                thread_running.set()
-                download_video_thread.start()
-                run_video(client_socket, gui, video_id, current_segment, stop_signal, thread_running, thread_lock)
+            with TemporaryDirectory() as segment_dir:
+                download_video_thread = threading.Thread(target=request_video,
+                                                         args=(client_socket,
+                                                               segment_dir,
+                                                               video_id,
+                                                               0,
+                                                               starting_quality,
+                                                               num_segment,
+                                                               current_segment,
+                                                               stop_signal,
+                                                               thread_running,
+                                                               thread_lock))
+
+                back_to_navigation = wait_for_thread_end(gui, thread_running)
+                if not back_to_navigation:
+                    thread_running.set()
+                    download_video_thread.start()
+                    run_video(client_socket, gui, segment_dir, video_id, current_segment, stop_signal, thread_running, thread_lock)
 
         if gui.upload_flag.is_set():
             gui.upload_flag = False
@@ -149,7 +152,7 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
             #break #return to login
         
     
-def run_video(client_socket: socket.socket, gui: GUI, video_id: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+def run_video(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDirectory, video_id: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
     """
     Gives video segments to gui and responds to video flags in gui
     """
@@ -158,7 +161,7 @@ def run_video(client_socket: socket.socket, gui: GUI, video_id: int, current_seg
             gui.segment_request_flag = False
             next_segment = gui.segment_num
             quality = gui.segment_quality
-            get_segment(client_socket, gui, video_id, quality, next_segment, current_segment, stop_signal, thread_running, thread_lock)
+            get_segment(client_socket, gui, segment_dir, video_id, quality, next_segment, current_segment, stop_signal, thread_running, thread_lock)
         
         if check_back_to_navigation(gui):
             if thread_running.is_set():
@@ -167,7 +170,7 @@ def run_video(client_socket: socket.socket, gui: GUI, video_id: int, current_seg
             break #returns to navigation to handle flag
 
 
-def get_segment(client_socket: socket.socket, gui: GUI, video_id: int, quality: int, segment_num: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDirectory, video_id: int, quality: int, segment_num: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
     """
     gets video segment and gives it to gui
     """
@@ -195,6 +198,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, video_id: int, quality: 
     
             download_video_thread = threading.Thread(target=request_video,
                                                      args=(client_socket,
+                                                           segment_dir,
                                                            video_id,
                                                            segment_num,
                                                            quality,
@@ -213,7 +217,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, video_id: int, quality: 
             download_video_thread.start()
 
 
-def request_video(client_socket: socket.socket, video_id: int, starting_segment: int, quality: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
+def request_video(client_socket: socket.socket, segment_dir: TemporaryDirectory, video_id: int, starting_segment: int, quality: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
     """
     Requests video segments
     """
@@ -227,7 +231,8 @@ def request_video(client_socket: socket.socket, video_id: int, starting_segment:
     while next_segment <= last_segment and not stop_signal.is_set():
 
         segment_name = f"{video_id}_{quality}_{next_segment}.mp4"
-        if Path(segment_name).exists():
+        extended_segment_name = Path(segment_dir).joinpath(segment_name)
+        if Path(extended_segment_name).exists():
             break #stop segment download if the segment has already been downloaded
         with thread_lock:
             current_segment.put(segment_name) #stores current segment being downloaded for checking in network_thread
@@ -235,7 +240,7 @@ def request_video(client_socket: socket.socket, video_id: int, starting_segment:
         next_segment_request["segment_id"] = next_segment
         next_segment_request["quality"] = quality
         video_metadata = request_server(client_socket, next_segment_request)
-        receive_reply(client_socket, video_metadata)
+        receive_reply(client_socket, video_metadata, segment_dir)
         next_segment += 1
         with thread_lock:
             current_segment.get() #remove stored segement_name
@@ -336,7 +341,7 @@ def upload_video(
     client_socket.sendall(byte_file)
 
 
-def receive_reply(client_socket: socket.socket, metadata: Dict) -> None:
+def receive_reply(client_socket: socket.socket, metadata: Dict, segment_dir: TemporaryDirectory) -> None:
     """
     Recieves reply from server. If the command type is DOWNLOAD, sends the
     request dictionary and recieves the file. Otherwise, recieve and print
@@ -344,19 +349,20 @@ def receive_reply(client_socket: socket.socket, metadata: Dict) -> None:
     """
     
     file_name = metadata.get("target")
+    extended_file_name = Path(segment_dir).joinpath(file_name)
     file_size = metadata.get("file_size")
-    print(f"Downloading {file_name} of size {file_size} bytes")
+    print(f"Downloading {extended_file_name} of size {file_size} bytes")
     client_socket.sendall(b"ACK")  # acknowledge the metadata
     # let's do it
     bytes_received = 0
-    with open(file_name, "wb") as file:
+    with open(extended_file_name, "wb") as file:
         while bytes_received < file_size:
             data = client_socket.recv(1024)
             if not data:
                 break
             file.write(data)
             bytes_received += len(data)
-    print(f"Downloaded {file_name} of size {bytes_received} bytes")
+    print(f"Downloaded {extended_file_name} of size {bytes_received} bytes")
 
 
 def delete_video(client_socket: socket.socket, video_id: int) -> None:
@@ -394,4 +400,3 @@ if __name__ == "__main__":
     button.show()
 
     exit(app.exec())
-       
