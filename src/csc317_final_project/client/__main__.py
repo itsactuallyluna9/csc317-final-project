@@ -197,7 +197,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
 
             if downloading_segment == video:
                 continue
-            
+
             gui.next_segment = video_path
             break #go back to checking flags in run_video
 
@@ -380,7 +380,7 @@ def receive_reply(client_socket: socket.socket, metadata: Dict, segment_dir: Tem
     extended_file_name = Path(segment_dir).joinpath(file_name)
     file_size = metadata.get("file_size")
     print(f"Downloading {extended_file_name} of size {file_size} bytes")
-    client_socket.sendall(b"ACK")  # acknowledge the metadata
+    client_socket.sendall(b'{"type": "ACK"}')  # acknowledge the metadata
     # let's do it
     bytes_received = 0
 
