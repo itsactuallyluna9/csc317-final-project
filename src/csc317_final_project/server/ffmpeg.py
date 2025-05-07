@@ -283,11 +283,11 @@ def process_video(
     thumbnail_output_file = uploaded_video.parent / "thumbnail.jpg"
     executor.submit(generate_thumbnail, uploaded_video, thumbnail_output_file)
 
-    for height, name, crf, preset, video_bitrate, audio_bitrate in reversed(  # type: ignore # we're fine as we filter it above
+    for height, name, crf, preset, video_bitrate, audio_bitrate in reversed( # type: ignore # we're fine
         valid_configs
     ):
         # start from lowest quality and go up
-        output_path = uploaded_video.parent / name
+        output_path = uploaded_video.parent / str(VideoQuality(int(name))) # ...thanks justin
         output_path.mkdir(parents=True, exist_ok=True)
         future = executor.submit(
             convert_video,
@@ -299,7 +299,7 @@ def process_video(
             preset,
             video_bitrate,
             audio_bitrate,
-            100,  # segment length in seconds
+            3,  # segment length in seconds
         )
         if name == valid_configs[0][1]:  # type: ignore # we're still fine
             # this is the last one (highest quality), so we should update the database with the video info
@@ -308,8 +308,8 @@ def process_video(
             db.update_video_info(
                 video_id,
                 video_info["duration"],
-                len(list((uploaded_video.parent / name).glob("*.mp4"))),
-                VideoQuality.from_string(name).value,
+                len(list((uploaded_video.parent / str(VideoQuality(int(name)))).glob("*.mp4"))),
+                int(name), # hate hate hate
             )
 
 

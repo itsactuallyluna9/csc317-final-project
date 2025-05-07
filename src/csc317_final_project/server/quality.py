@@ -81,21 +81,21 @@ class VideoQuality(IntEnum):
         # height, name, crf(constant rate factor - lower is better)
         # preset, video bitrate, audio bitrate
         if self == VideoQuality.FOUR_K:
-            return (2160, "4K", 16, "slow", "16000k", "192k")
+            return (2160, "7", 16, "slow", "16000k", "192k")
         elif self == VideoQuality.TWO_K:
-            return (1440, "2K", 23, "slow", "8000k", "128k")
+            return (1440, "6", 23, "slow", "8000k", "128k")
         elif self == VideoQuality.ONE_K:
-            return (1080, "1080p", 23, "slow", "5000k", "128k")
+            return (1080, "5", 23, "slow", "5000k", "128k")
         elif self == VideoQuality.SEVEN_TWENTY_P:
-            return (720, "720p", 23, "slow", "2500k", "128k")
+            return (720, "4", 23, "slow", "2500k", "128k")
         elif self == VideoQuality.FOUR_EIGHTY_P:
-            return (480, "480p", 23, "slow", "1000k", "128k")
+            return (480, "3", 23, "slow", "1000k", "128k")
         elif self == VideoQuality.THREE_SIXTY_P:
-            return (360, "360p", 23, "slow", "500k", "128k")
+            return (360, "2", 23, "slow", "500k", "128k")
         elif self == VideoQuality.TWO_FORTY_P:
-            return (240, "240p", 23, "slow", "300k", "128k")
+            return (240, "1", 23, "slow", "300k", "128k")
         elif self == VideoQuality.ONE_FORTY_FOUR_P:
-            return (144, "144p", 23, "slow", "100k", "128k")
+            return (144, "0", 23, "slow", "100k", "128k")
         else:
             return None
 

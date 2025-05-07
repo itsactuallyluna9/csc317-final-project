@@ -9,7 +9,7 @@ from csc317_final_project.server.quality import VideoQuality
 
 def get_segment_path(
     server_path: Path,
-    video_id: str,
+    video_id: int,
     quality: VideoQuality,
     segment_id: int,
 ) -> Path:
@@ -18,7 +18,7 @@ def get_segment_path(
 
     Args:
         server_path (Path): The path to the server directory.
-        video_id (str): The ID of the video.
+        video_id (int): The ID of the video.
         quality (VideoQuality): The quality of the video.
         segment_id (int): The ID of the segment.
 
@@ -26,7 +26,7 @@ def get_segment_path(
         Path: The path to the video segment.
     """
     return (
-        get_video_root_path(server_path, video_id) / str(quality) / f"{segment_id}.mp4"
+        get_video_root_path(server_path, str(video_id)) / str(quality) / f"{video_id}_{str(quality.value)}_{segment_id}.mp4"
     )
 
 

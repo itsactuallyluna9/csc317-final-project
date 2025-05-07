@@ -41,7 +41,7 @@ def main():
         print("Login successful.")
         # Send video upload request
         upload_data = {
-            "type": "VIDEO_UPLOAD",
+            "type": "UPLOAD",
             "target": video_path,
             "file_size": Path(video_path).stat().st_size,
             "title": title,
@@ -49,7 +49,7 @@ def main():
         send_obj(s, upload_data)
 
         response = s.recv(1024)
-        if response != b"ACK":
+        if response != b'{"type": "ACK"}':
             print("Server did not acknowledge video upload request - What?")
             print(response)
             return

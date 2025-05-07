@@ -204,7 +204,7 @@ class Server:
             self.worker_pool.submit(
                 process_video, self.worker_pool, self.db, original_video, video_id
             )
-            return {"success": True}
+            return {"success": True, "video_id": video_id}
 
         elif recieved_obj["type"] == "DBG_REPROCESS_VIDEO":
             # debug - reprocess video
