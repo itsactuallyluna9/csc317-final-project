@@ -207,8 +207,5 @@ class Database:
             video_id (str): The ID of the video.
         """
         with self.lock:
-            self.cursor.execute(
-                "DELETE FROM videos WHERE id = ?",
-                (video_id)
-            )
+            self.cursor.execute("DELETE FROM videos WHERE id = ?", (video_id))
             self.connection.commit()

@@ -26,7 +26,9 @@ def get_segment_path(
         Path: The path to the video segment.
     """
     return (
-        get_video_root_path(server_path, str(video_id)) / str(quality) / f"{video_id}_{str(quality.value)}_{segment_id}.mp4"
+        get_video_root_path(server_path, str(video_id))
+        / str(quality)
+        / f"{video_id}_{str(quality.value)}_{segment_id}.mp4"
     )
 
 

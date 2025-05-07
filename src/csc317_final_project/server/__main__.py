@@ -189,6 +189,13 @@ class Server:
             # debug - reprocess video
             video_id = recieved_obj["video_id"]
             video_root = get_video_root_path(self.path, str(video_id))
+            # hide the video
+            self.db.update_video_info(
+                video_id,
+                -1,
+                -1,
+                -1,
+            )
             # remove all files except the original video
             for file in video_root.glob("*"):
                 if "original" not in file.name:
@@ -216,12 +223,12 @@ class Server:
             author = recieved_obj.get("author", None)
             videos = self.db.get_video_page(page_num, author)
             return videos
-        
+
         elif recieved_obj["type"] == "DELETE":
             # remove video from database and remove folder
             video_id = recieved_obj["video_id"]
             video_path = get_video_root_path(self.path, video_id)
-            
+
             try:
                 if video_path.exists():
                     self.db.delete(video_id)
