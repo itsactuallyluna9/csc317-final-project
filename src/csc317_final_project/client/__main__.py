@@ -154,10 +154,6 @@ def navigate(client_socket: socket.socket, gui: GUI) -> None:
         if gui.upload_flag.is_set():
             gui.upload_flag = False
             upload_video(client_socket, gui.upload_file_path)
-
-        #if gui.logout_flag.is_set():
-            #gui.logout_flag = False
-            #break #return to login
         
     
 def run_video(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDirectory, video_id: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
@@ -370,6 +366,8 @@ def upload_video(
 
     request_server(client_socket, request_dict)
     client_socket.sendall(byte_file)
+    client_socket.recv(1024) #blind check
+
 
 
 def receive_reply(client_socket: socket.socket, metadata: Dict, segment_dir: TemporaryDirectory) -> None:
