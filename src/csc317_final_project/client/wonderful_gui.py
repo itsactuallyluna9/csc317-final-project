@@ -380,7 +380,7 @@ class GUI(QtWidgets.QWidget):
 
             self._login_button = QtWidgets.QPushButton("Login")
             self._login_button.setFixedWidth(100)
-            self._text = QtWidgets.QLabel("Login or Register", alignment=QtCore.Qt.AlignHCenter)
+            self._text = QtWidgets.QLabel("Login or Register", alignment=QtCore.Qt.AlignHHCenter)
             self._text.setFont(QtGui.QFont("Times", 20, QtGui.QFont.Bold))
             self._registration_button = QtWidgets.QPushButton("Register")
             self._registration_button.setFixedWidth(100)
@@ -816,24 +816,26 @@ class GUI(QtWidgets.QWidget):
                 if self._segment_timer is None:
                     return
                 
-
                 elapsed = time.time() - self._segment_timer
                 is_last = self._seg_num - 1 == self._last_segment_num
                 last_seg_length = self._video_duration % SEGMENT_DURATION or SEGMENT_DURATION
                 duration = last_seg_length if is_last else SEGMENT_DURATION
 
-                # Preload just before current segment ends
-                if elapsed >= duration - 2 and self._mainGUI.segment_ready_flag.is_set():
+                # Preload much earlier for seamless transition
+                if elapsed >= duration - 3 and self._mainGUI.segment_ready_flag.is_set():
                     self._inactivePlayer.setSource(QtCore.QUrl(str(self._mainGUI.next_segment)))
+                    # Pre-buffer the media without playing
                     self._inactivePlayer.pause()
                     print(f"Preloaded segment {self._seg_num}")
+                    self._mainGUI.segment_ready_flag.clear()
                 
                 if self._segment_timer:
                     current_time = int((self._seg_num - 1) * SEGMENT_DURATION + (time.time() - self._segment_timer))
-                    self._seekSlider.blockSignals(True)  # Prevent triggering user interaction handler
+                    self._seekSlider.blockSignals(True)
                     self._seekSlider.setValue(min(current_time, self._video_duration))
                     self._seekSlider.blockSignals(False)
 
+                # Check if we've reached the end of the current segment
                 if elapsed >= duration:
                     if self._seg_num > self._last_segment_num:
                         self._activePlayer.stop()
@@ -846,18 +848,24 @@ class GUI(QtWidgets.QWidget):
                     self._swap_players()
 
             def _swap_players(self):
-                self._activePlayer.pause()
-                self._inactivePlayer.play()
+                # Stop the current player first
+                self._activePlayer.stop()
+                
+                # Switch to the inactive player and start it immediately
                 self._videoStack.setCurrentWidget(self._inactiveWidget)
-
+                self._inactivePlayer.play()
+                
                 # Swap references
                 self._activePlayer, self._inactivePlayer = self._inactivePlayer, self._activePlayer
                 self._activeWidget, self._inactiveWidget = self._inactiveWidget, self._activeWidget
+                
+                # Reset the segment timer
                 self._segment_timer = time.time()
-
+                
                 self._update_status(f"Playing Segment {self._seg_num}")
                 print(f"Switched to segment {self._seg_num}")
-
+                
+                # Request next segment immediately
                 self._seg_num += 1
                 if self._seg_num <= self._last_segment_num:
                     self._mainGUI.segment_num = self._seg_num
