@@ -192,11 +192,11 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
                 downloading_segment = ""
 
                 if current_segment.qsize() > 0:
-                    downloading_segment = current_segment.get()
+                    downloading_segment = current_segment.get()#name of video being downloaded currently
                     current_segment.put(downloading_segment)
 
             if downloading_segment == video:
-                continue
+                continue #keep checking until video is done being downloaded
 
             gui.next_segment = str(video_path)
             gui.segment_ready_flag = True
@@ -207,7 +207,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
                 downloading_segment = ""
                 with thread_lock:
                     if current_segment.qsize() > 0:
-                        downloading_segment = current_segment.get()
+                        downloading_segment = current_segment.get() #name of video being downloaded currently
                         current_segment.put(downloading_segment)
                     else:
                         continue #wait to see what is being downloaded
@@ -233,7 +233,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
             
             back_to_navigation = wait_for_thread_end(gui, thread_running)
 
-            if back_to_navigation: #check whether to continue download attempt
+            if back_to_navigation: #check whether to abandon download attempt and return to navigation
                 break
 
             thread_running.set()
@@ -242,7 +242,7 @@ def get_segment(client_socket: socket.socket, gui: GUI, segment_dir: TemporaryDi
 
 def request_video(client_socket: socket.socket, segment_dir: TemporaryDirectory, video_id: int, starting_segment: int, quality: int, num_segment: int, current_segment: Queue, stop_signal: threading.Event, thread_running: threading.Event, thread_lock: threading.Lock) -> None:
     """
-    Requests video segments
+    Requests video segments from server
     """
     next_segment = starting_segment
     last_segment = num_segment - 1
@@ -252,7 +252,7 @@ def request_video(client_socket: socket.socket, segment_dir: TemporaryDirectory,
 
     while next_segment <= last_segment and not stop_signal.is_set():
         segment_name = f"{video_id}_{quality}_{next_segment}.mp4"
-        extended_segment_name = Path(segment_dir).joinpath(segment_name)
+        extended_segment_name = Path(segment_dir).joinpath(segment_name) #add temporary directory to segment path
 
         if Path(extended_segment_name).exists():
             next_segment += 1
@@ -264,7 +264,7 @@ def request_video(client_socket: socket.socket, segment_dir: TemporaryDirectory,
         next_segment_request["segment_id"] = next_segment
         next_segment_request["quality"] = quality
         video_metadata = request_server(client_socket, next_segment_request)
-        receive_reply(client_socket, video_metadata, segment_dir)
+        receive_reply(client_socket, video_metadata, segment_dir) #download segment
         next_segment += 1
 
         with thread_lock:
@@ -290,7 +290,7 @@ def wait_for_thread_end(gui: GUI, thread_running: threading.Event) -> bool:
     while thread_running.is_set():
         time.sleep(0.1)
 
-        if check_back_to_navigation(gui):
+        if check_back_to_navigation(gui): #check whether to stop waiting and return to navigation
             return True
         
     return False
@@ -374,9 +374,7 @@ def upload_video(
 
 def receive_reply(client_socket: socket.socket, metadata: Dict, segment_dir: TemporaryDirectory) -> None:
     """
-    Recieves reply from server. If the command type is DOWNLOAD, sends the
-    request dictionary and recieves the file. Otherwise, recieve and print
-    message from server.
+    Recieves video segment from server 
     """
     file_name = metadata.get("target")
     extended_file_name = Path(segment_dir).joinpath(file_name)
@@ -420,7 +418,7 @@ def request_server(client_socket: socket.socket, request_dict: Dict) -> Dict:
     """
     request_json = json.dumps(request_dict)
     client_socket.sendall(request_json.encode("utf-8"))
-    response_json = client_socket.recv(1024).decode("utf-8") #error message not dictionary; need to fix
+    response_json = client_socket.recv(1024).decode("utf-8")
     response = json.loads(response_json)
     return response
     
